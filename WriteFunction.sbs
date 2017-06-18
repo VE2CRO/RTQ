@@ -1,0 +1,86 @@
+## SCL Builder Setup File: Do not edit!!
+
+## VERSION: 3.60.00.00
+## FORMAT:  v2.00.01
+## DEVICE:  PIC16F690
+
+## PINREGACTIONS
+ms
+No Repeat
+PORTA
+--
+1000
+00
+--
+1100
+1B
+--
+1200
+00
+--
+1300
+11
+--
+1400
+00
+--
+1500
+11
+--
+1600
+00
+--
+1700
+1A
+--
+1800
+00
+--
+1900
+11
+--
+2000
+00
+--
+2100
+12
+--
+2200
+00
+--
+2300
+13
+--
+2400
+00
+--
+2500
+1C
+--
+&
+## ADVPINREGACTIONS
+--
+&
+--
+COND1
+Pin
+AN0
+=
+0
+
+
+
+--
+&
+## CLOCK
+&
+## STIMULUSFILE
+&
+## RESPONSEFILE
+&
+## ASYNCH
+&
+## ADVANCEDSCL
+
+1
+&

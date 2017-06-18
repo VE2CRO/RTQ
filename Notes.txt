@@ -1,0 +1,23 @@
+Site ID RTQ Ripon 16
+157*
+157#
+107*
+107#
+
+
+*A
+
+Fermeture du lien:
+*A99#
+*A40104#
+*A0#
+
+Ouverture du lien:
+*A99#
+*A40105#
+*A0#
+
+Détails:
+A99 = entree mode programmation
+A4010x = écriture de "x" dans le registre "enable"
+A0# = sortie du mode de programmation

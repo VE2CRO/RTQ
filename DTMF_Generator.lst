@@ -1,0 +1,5232 @@
+CCS PCM C Compiler, Version 4.068, 42663               10-Dec-16 12:20
+
+               Filename: DTMF_Generator.lst
+
+               ROM used: 4031 words (98%)
+                         Largest free fragment is 60
+               RAM used: 189 (74%) at main() level
+                         214 (84%) worst case
+               Stack:    6 worst case (4 in main + 2 for interrupts)
+
+*
+0000:  MOVLW  08
+0001:  MOVWF  0A
+0002:  GOTO   725
+0003:  NOP
+0004:  MOVWF  7F
+0005:  SWAPF  03,W
+0006:  CLRF   03
+0007:  MOVWF  26
+0008:  MOVF   7F,W
+0009:  MOVWF  25
+000A:  MOVF   0A,W
+000B:  MOVWF  2D
+000C:  CLRF   0A
+000D:  SWAPF  25,F
+000E:  MOVF   04,W
+000F:  MOVWF  27
+0010:  MOVF   20,W
+0011:  MOVWF  28
+0012:  MOVF   21,W
+0013:  MOVWF  29
+0014:  MOVF   22,W
+0015:  MOVWF  2A
+0016:  MOVF   23,W
+0017:  MOVWF  2B
+0018:  MOVF   24,W
+0019:  MOVWF  2C
+001A:  BCF    03.7
+001B:  BCF    03.5
+001C:  BTFSS  0B.5
+001D:  GOTO   020
+001E:  BTFSC  0B.2
+001F:  GOTO   03D
+0020:  BTFSS  0B.3
+0021:  GOTO   024
+0022:  BTFSC  0B.0
+0023:  GOTO   03F
+0024:  MOVLW  8C
+0025:  MOVWF  04
+0026:  BTFSS  00.1
+0027:  GOTO   02A
+0028:  BTFSC  0C.1
+0029:  GOTO   041
+002A:  MOVF   27,W
+002B:  MOVWF  04
+002C:  MOVF   28,W
+002D:  MOVWF  20
+002E:  MOVF   29,W
+002F:  MOVWF  21
+0030:  MOVF   2A,W
+0031:  MOVWF  22
+0032:  MOVF   2B,W
+0033:  MOVWF  23
+0034:  MOVF   2C,W
+0035:  MOVWF  24
+0036:  MOVF   2D,W
+0037:  MOVWF  0A
+0038:  SWAPF  26,W
+0039:  MOVWF  03
+003A:  SWAPF  7F,F
+003B:  SWAPF  7F,W
+003C:  RETFIE
+003D:  BCF    0A.3
+003E:  GOTO   1CA
+003F:  BCF    0A.3
+0040:  GOTO   1F0
+0041:  BCF    0A.3
+0042:  GOTO   21F
+.................... //*************************************************************************** 
+.................... //* Title                : DTMF Generator 
+.................... //* DESCRIPTION 
+.................... //* 
+.................... //*************************************************************************** 
+.................... #include "DTMF_Generator.h" 
+.................... #include <stddef.h> 
+.................... /////////////////////////////////////////////////////////////////////////// 
+.................... ////        (C) Copyright 1996,2003 Custom Computer Services           //// 
+.................... //// This source code may only be used by licensed users of the CCS C  //// 
+.................... //// compiler.  This source code may only be distributed to other      //// 
+.................... //// licensed users of the CCS C compiler.  No other use, reproduction //// 
+.................... //// or distribution is permitted without written permission.          //// 
+.................... //// Derivative programs created using this software in object code    //// 
+.................... //// form are not restricted in any way.                               //// 
+.................... /////////////////////////////////////////////////////////////////////////// 
+....................  
+.................... #ifndef _STDDEF 
+....................  
+.................... #define _STDDEF 
+....................  
+.................... #if sizeof(unsigned int8 *)==1 
+.................... #define ptrdiff_t unsigned int8 
+.................... #else 
+.................... #define ptrdiff_t unsigned int16 
+.................... #endif 
+....................  
+.................... #define size_t unsigned int8 
+.................... #define wchar_t char 
+.................... #define NULL 0 
+....................  
+.................... #define offsetof(s,f) (offsetofbit(s,f)/8) 
+....................  
+.................... #endif 
+....................  
+.................... #include <16F690.h> 
+.................... //////// Standard Header file for the PIC16F690 device //////////////// 
+.................... #device PIC16F690 
+.................... #list 
+....................  
+....................  
+.................... // DTMF Key maps {{{ 
+.................... #define d1 0x01 
+.................... #define d2 0x02 
+.................... #define d3 0x03 
+.................... #define d4 0x04 
+.................... #define d5 0x05 
+.................... #define d6 0x06 
+.................... #define d7 0x07 
+.................... #define d8 0x08 
+.................... #define d9 0x09 
+.................... //#define d0 0x0a 
+.................... #define d0 0x00 
+.................... #define ds 0x0b 
+.................... #define dp 0x0c 
+.................... #define da 0x0d 
+.................... #define db 0x0e 
+.................... #define dc 0x0f 
+.................... //#define dd 0x00 
+.................... #define dd 0x0a 
+.................... // }}} 
+.................... // Morse parameters {{{ 
+.................... // DitDelay: 
+.................... //     7  --> 100ms 
+.................... #define DitDelay 7  
+.................... #define TIMER2_DELAY_FACTOR 1/6 // Based on experimentation with trace.  
+.................... #define MORSE_MULTIPLIER_ISR_ON 10 * TIMER2_DELAY_FACTOR 
+.................... #define MORSE_MULTIPLIER_ISR_OFF 10  
+.................... #define DAH_DURATION_RATIO 3 
+.................... #define MCHAR(c)	c-'a'+10 
+.................... const int8 cMorseChar[] = { 
+.................... 	0b10101010, // 0 (dah dah dah dah dah)	0 
+.................... 	0b01101010, // 1 (dit dah dah dah dah)	1 
+.................... 	0b01011010, // 2 (dit dit dah dah dah)	2 
+.................... 	0b01010110, // 3 (dit dit dit dah dah)	3 
+.................... 	0b01010101, // 4 (dit dit dit dit dah)	4 
+.................... 	0b01010101, // 5 (dit dit dit dit dit)	5 
+.................... 	0b10010101, // 6 (dah dit dit dit dit)	6 
+.................... 	0b10100101, // 7 (dah dah dit dit dit)	7 
+.................... 	0b10101001, // 8 (dah dah dah dit dit)	8 
+.................... 	0b10101010, // 9 (dah dah dah dah dit)	9 
+.................... 	0b01100000, // a (dit dah)		10 
+.................... 	0b10010101, // b (dah dit dit dit)	11 
+.................... 	0b10011001, // c (dah dit dah dit)	12 
+.................... 	0b10010100, // d (dah dit dit)		13 
+.................... 	0b01000000, // e (dit)			14 
+.................... 	0b01011001, // f (dit dit dah dit)	15 
+.................... 	0b10100100, // g (dah dah dit) 		16 
+.................... 	0b01010101, // h (dit dit dit dit)	17 
+.................... 	0b01010000, // i (dit dit)		18 
+.................... 	0b01101010, // j (dit dah dah dah)	19 
+.................... 	0b10011000, // k (dah dit dah)		20 
+.................... 	0b01100101, // l (dit dah dit dit)	21 
+.................... 	0b10100000, // m (dah dah)		22 
+.................... 	0b10010000, // n (dah dit)		23 
+.................... 	0b10101000, // o (dah dah dah)		24 
+.................... 	0b01101001, // p (dit dah dah dit)	25 
+.................... 	0b10100110, // q (dah dah dit dah)	26 
+.................... 	0b01100100, // r (dit dah dit)		27 
+.................... 	0b01010100, // s (dit dit dit)		28 
+.................... 	0b10000000, // t (dah)			29 
+.................... 	0b01011000, // u (dit dit dah)		30 
+.................... 	0b01010110, // v (dit dit dit dah)	31 
+.................... 	0b01101000, // w (dit dah dah)		32 
+.................... 	0b10010110, // x (dah dit dit dah)	33 
+.................... 	0b10011010, // y (dah dit dah dah)	34 
+.................... 	0b10100101 // z (dah dah dit dit)	35 
+.................... }; // }}} 
+.................... // {{{ Program symbols 
+.................... #define INIT_PAUSE 1500 
+.................... #define DONE       0x00 
+.................... #define SEND_DTMF  0x10 
+.................... #define PAUSE      0x30 
+.................... #define UPDATE_PWM_PTT 0x20 
+.................... #define UPDATE_ENABLE  0x40 
+.................... #define BEEP       0x50 
+.................... #define JUMP       0x60 
+.................... #define PGM	       0x70 
+.................... #define MORSE      0x80 
+.................... // }}} 
+.................... // Function defaults {{{ 
+.................... #define LastDigit 32 
+.................... #define Strb 16 
+.................... #define START 1 
+.................... #define STOP 0 
+.................... // }}} 
+.................... // Data synchronizing params {{{ 
+.................... #define SYNC_RAM	0 
+.................... #define SYNC_EEPROM	1 
+.................... #define SYNC_DEFAULT    2 
+.................... // Data synchronizing params }}} 
+....................  
+.................... // structure definitions {{{ 
+.................... // sDTMF {{{ 
+.................... typedef struct {  
+.................... 			int Key 	: 4; 
+.................... 			int Strobe	: 1; 
+.................... 			int LastKey	: 1; 
+.................... 			int UNUSED	: 2; 
+.................... } sDTMF; 
+....................  
+.................... // sDTMF }}} 
+....................  
+.................... typedef struct { 
+.................... 	sDTMF Digit[4]; 
+.................... 	int PgmPtr; 
+.................... } sFunction; 
+....................  
+.................... typedef struct { 
+.................... 	int Arg : 4; 
+....................         int Op : 4;	 
+.................... } sInstruction; 
+....................  
+.................... typedef struct { 
+.................... 	sInstruction Instruction[8]; 
+.................... } sProgram; 
+....................  
+.................... typedef struct { 
+....................     int PgmPtr  : 4; 
+....................     int RunPgm  : 1; 
+.................... //    int Count   : 2; 
+.................... } sNextPgm; 
+....................  
+.................... #define FUNCTION_NUM 8 
+.................... #define PGM_NUM 8 
+....................  
+.................... #define PTT_OVERRIDE 1 
+.................... #define PTT_NORMAL   0 
+....................  
+.................... // Special program pointers {{{ 
+.................... // PGM pointers 0:7 are user pgms. 
+.................... // 8 --> PGM_MODE 
+.................... // 9 --> Calibrate DTMF 
+.................... #define PGM_MODE 8 
+.................... #define CAL_DTMF 9 
+.................... // PgmMode digit index 
+.................... // 	      0  1     2      3      4      5    6 
+.................... // Syntax : * A <OP> <REG1> <REG0> <VAL1> <VAL0> # 
+.................... #define PGM_OP 1 
+.................... #define PGM_REG1 2 
+.................... #define PGM_REG2 3 
+.................... #define PGM_VAL1 4 
+.................... #define PGM_VAL2 5 
+.................... // PgmFunction syntax: 
+.................... // aDTMF index         0 1 2 3 4 5 6 7 8 
+.................... // ProgramFunction : * A a b c w x y z # 
+.................... #define PGMFN_TYPE 2 
+.................... #define PGMFN_PTR 3 
+.................... #define PGMFN_ARG0 4 
+.................... #define PGMFN_ARG1 5 
+.................... #define PGMFN_ARG2 6 
+.................... #define PGMFN_ARG3 7 
+.................... // ProgramInstruction 
+.................... #define PGMINS_FPTR 2 
+.................... #define PGMINS_IPTR 3 
+.................... #define PGMINS_OP   4 
+.................... #define PGMINS_ARG0  5 
+.................... #define PGMINS_ARG1  6 
+.................... // EchoRegister 
+.................... #define ECHO_TYPE 2 
+.................... #define ECHO_PTR 3 
+.................... #define ECHO_INDEX 4 
+.................... // SyncData 
+.................... #define SYNC_TYPE 2 
+.................... // ProgramReg 
+.................... #define PGMREG_ADD0 2 
+.................... #define PGMREG_ADD1 3 
+.................... #define PGMREG_VAL0 4 
+.................... #define PGMREG_VAL1 5 
+.................... #define PGMREG_VAL2 6 
+....................  
+.................... // Special program pointers }}} 
+....................  
+.................... sFunction Function[FUNCTION_NUM+1]; 
+.................... sProgram Program[8]; 
+....................  
+.................... int PTT; 
+.................... int1 UpdatePTT; 
+.................... int Enable; 
+.................... //int PWM_PTT; 
+.................... int PgmMode; 
+.................... sNextPgm ExecPgm,NextPgm; 
+....................  
+.................... // Access like this: 
+.................... // 
+.................... // Program[0].Instruction[0].Op ==> Points to the operator 
+.................... // Program[0].Instruction[0].Arg ==> Points to the argument 
+.................... // 
+....................  
+.................... // sCOR {{{ 
+.................... typedef struct { 
+.................... 		int RX0 : 1; 
+.................... 		int RX1 : 1; 
+.................... 		int RX2 : 1; 
+.................... } sCOR;  
+.................... // sCOR }}} 
+.................... // structure definitions }}} 
+....................  
+.................... // Declare EEPROM & RAM variables {{{ 
+.................... // Volatile variables 
+.................... volatile int1 COR_FLAG; 
+.................... volatile sDTMF DTMF; // ISR writes to this register. 
+.................... #define DTMFArraySize 10 
+.................... sDTMF aDTMF[DTMFArraySize]; 
+.................... sDTMF *pDTMF; 
+.................... volatile sCOR COR_IN; 
+.................... int sec; 
+.................... unsigned int16 min; 
+.................... int1 PTTTimeOutFlag; 
+.................... int1 CALIBRATE_DTMF_FLAG; 
+....................  
+.................... int Polarity;  
+.................... int RX0_PTT,RX1_PTT,RX2_PTT; 
+.................... int PWM_PTT; 
+.................... int SiteID; 
+.................... int MorseID[6]; 
+.................... int PTT0TimeOut; 
+.................... int PTT1TimeOut; 
+.................... int PTT2TimeOut; 
+.................... int PTTTimeOutTimer; 
+.................... int DTMF_OSCTUNE[16]; 
+....................  
+....................                       			// RegPtr index     ROM address 
+.................... const int* RegPtrArray[32]={&Polarity,   // 00      96   
+....................                             &Enable,     // 01      97  
+....................                             &RX0_PTT,   // 02      98 
+....................                             &RX1_PTT,   // 03      99 
+....................                             &RX2_PTT,   // 04     100 
+....................                             &SiteID,     // 05     101 
+....................                             &MorseID[0], // 06     102 
+....................                             &MorseID[1], // 07     103 
+....................                             &MorseID[2], // 08     104 
+....................                             &MorseID[3], // 09     105 
+....................                             &MorseID[4], // 10     106 
+....................                             &MorseID[5],  // 11     107 
+....................                             &PWM_PTT,     // 12     108 
+.................... 			    &PTT0TimeOut, // 13	    109 
+.................... 			    &PTT1TimeOut, // 14     110 
+.................... 			    &PTT2TimeOut,  // 15     111 
+.................... 			    &DTMF_OSCTUNE[0], // 16  112 
+.................... 			    &DTMF_OSCTUNE[1], // 17  113 
+.................... 			    &DTMF_OSCTUNE[2], // 18  114 
+.................... 			    &DTMF_OSCTUNE[3], // 19  115 
+.................... 			    &DTMF_OSCTUNE[4], // 20  116 
+.................... 			    &DTMF_OSCTUNE[5], // 21  117 
+.................... 			    &DTMF_OSCTUNE[6], // 22  118 
+.................... 			    &DTMF_OSCTUNE[7], // 23  119 
+.................... 			    &DTMF_OSCTUNE[8], // 24  120 
+.................... 			    &DTMF_OSCTUNE[9], // 25  121 
+.................... 			    &DTMF_OSCTUNE[10], // 26  122 
+.................... 			    &DTMF_OSCTUNE[11], // 27  123 
+.................... 			    &DTMF_OSCTUNE[12], // 28  124 
+.................... 			    &DTMF_OSCTUNE[13], // 29  125 
+.................... 			    &DTMF_OSCTUNE[14], // 30  126 
+.................... 			    &DTMF_OSCTUNE[15] // 31  127 
+.................... }; 
+....................  
+.................... // EEPROM and RAM declarator macros {{{ 
+.................... //typedef struct sRegInfo_t { 
+.................... //	int8 iEEOffset; 
+.................... //	int8 *ramPtr; 
+.................... //} sRegInfo; 
+.................... //const int8 EEPROM_regs=0; 
+....................  
+.................... //#define DeclareVar(name) \ 
+.................... //	int8 name; \ 
+.................... //	const int8 Offset_##name = EEPROM_regs; \ 
+.................... //	const int8 RegCountTemp = EEPROM_regs; \ 
+.................... //	#undef EEPROM_regs \ 
+.................... //	const int8 EEPROM_regs = (RegCountTemp + 1); \ 
+.................... //	#undef RegCountTemp 
+....................  
+....................  
+.................... //#define GetEEOffset(name)	Offset_##name 
+....................  
+.................... // EEPROM and RAM declarator macros }}} 
+....................  
+.................... //DeclareVar(Instruction0) 
+.................... //DeclareVar(Polarity) 
+....................  
+.................... //const sRegInfo RegInfo []= { 
+.................... //	{GetEEOffset(Instruction0), &Instruction0} 
+.................... //}; 
+....................  
+.................... //const int RegInfoSize = sizeof(RegInfo)/sizeof(sRegInfo); 
+.................... // Declare EEPROM & RAM variables }}} 
+....................  
+.................... // Function header declarations {{{ 
+.................... int1 ProgramFunction(void); 
+.................... int1 ProgramInstruction(void); 
+.................... int1 ProgramReg(void); 
+.................... int1 EchoRegister(void); 
+.................... int1 ValidKey(int index); 
+.................... int1 ValidKeyRange(unsigned int a,unsigned int b); 
+.................... int1 syncData(void); 
+.................... void RunPgmMode(void); 
+.................... void init_pwm(void); 
+.................... void stop_pwm(void); 
+.................... void sync_data(int type); 
+.................... void update_PTT (int extraPTT, int override); 
+.................... void DoTimeOut(int TOreg) ; 
+.................... // ExecOp {{{ 
+.................... void ExecOp (int op,int arg); 
+.................... // }}} 
+.................... // sendDTMF {{{ 
+.................... void sendDTMF(int digit); 
+.................... void ExecutePgm(int Program); 
+.................... // sendDTMF }}} 
+.................... // sendDTMF {{{ 
+.................... void sendDTMFCal(int digit); 
+.................... void CalibrateDTMF(void); 
+.................... int1 calibrateDigit(int digit); 
+.................... int1 OSCTuneTest(int digit); 
+.................... void ExecutePgm(int Program); 
+.................... // sendDTMF }}} 
+.................... // clearDTMFArray {{{ 
+.................... void clearDTMFArray(void); 
+.................... // }}} 
+.................... // ProcessDTMF(void) {{{ 
+.................... int ProcessDTMF(void); 
+.................... // }}} 
+.................... // ActivateRXRelays(val) {{{ 
+.................... void ActivateRXRelays(int val); 
+.................... // }}} 
+.................... // 
+.................... // Function header declarations }}} 
+....................  
+.................... // Define DTMF digits {{{ 
+.................... #define DTMF_1 0x00 
+.................... #define DTMF_2 0x01 
+.................... #define DTMF_3 0x02 
+.................... #define DTMF_A 0x03 
+.................... #define DTMF_4 0x04 
+.................... #define DTMF_5 0x05 
+.................... #define DTMF_6 0x06 
+.................... #define DTMF_B 0x07 
+.................... #define DTMF_7 0x08 
+.................... #define DTMF_8 0x09 
+.................... #define DTMF_9 0x0A 
+.................... #define DTMF_C 0x0B 
+.................... #define DTMF_S 0x0C 
+.................... #define DTMF_0 0x0D 
+.................... #define DTMF_P 0x0E 
+.................... #define DTMF_D 0x0F 
+.................... // Define DTMF digits }}} 
+....................  
+.................... // Mapping from the DTMF receiver value to DTMF generator {{{ 
+.................... const int DTMF_map[] = {DTMF_0, // 0 --> Switched with (A) 
+.................... 				DTMF_1, // 1 
+.................... 				DTMF_2, //2 
+.................... 				DTMF_3, //3 
+.................... 				DTMF_4, //4 
+.................... 				DTMF_5, //5 
+.................... 				DTMF_6, //6 
+.................... 				DTMF_7, //7 
+.................... 				DTMF_8, //8 
+.................... 				DTMF_9, //9 
+.................... 				DTMF_D, //A --> Switched with (0) 
+.................... 				DTMF_S, //B 
+.................... 				DTMF_P, //C 
+.................... 				DTMF_A, //D 
+.................... 				DTMF_B, //E 
+.................... 				DTMF_C  //F 
+.................... }; 
+.................... // }}} 
+....................  
+.................... // PWM variables {{{ 
+.................... #define DTMF_DELAY_RATIO 25/70 // 700ms according to Jonathan 
+.................... #define DTMF_LEN     350 * DTMF_DELAY_RATIO 
+.................... #define CCP_PWM_MODE 0x00 
+.................... #define CCP_PWM_HH   0x0C 
+.................... // PWM variables }}} 
+....................  
+.................... // Fuses {{{ 
+.................... #fuses INTRC 
+.................... #fuses NOPROTECT 
+.................... #fuses NOBROWNOUT 
+.................... #fuses NOMCLR 
+.................... #fuses NOCPD 
+.................... #fuses NOWDT // WDT controlled by sw 
+.................... #fuses NOPUT 
+.................... #fuses NOFCMEN 
+.................... #fuses NOIESO 
+.................... #use delay(internal=8M,restart_wdt) 
+*
+0650:  MOVLW  46
+0651:  MOVWF  04
+0652:  BSF    03.7
+0653:  MOVF   00,W
+0654:  BTFSC  03.2
+0655:  GOTO   667
+0656:  MOVLW  02
+0657:  MOVWF  21
+0658:  MOVLW  BF
+0659:  MOVWF  20
+065A:  CLRWDT
+065B:  DECFSZ 20,F
+065C:  GOTO   65A
+065D:  DECFSZ 21,F
+065E:  GOTO   658
+065F:  MOVLW  96
+0660:  MOVWF  20
+0661:  DECFSZ 20,F
+0662:  GOTO   661
+0663:  GOTO   664
+0664:  CLRWDT
+0665:  DECFSZ 00,F
+0666:  GOTO   656
+0667:  RETLW  00
+.................... #byte OSCTUNE = 0x90 
+.................... #byte CCP1CON = 0x17 
+.................... #byte PSTRCON = 0x19D 
+.................... // Fuses }}} 
+....................  
+.................... // fast_io settings {{{ 
+.................... #use fast_io(A) 
+.................... #use fast_io(B) 
+.................... #use fast_io(C) 
+.................... #case  
+.................... // fast_io settings }}} 
+....................  
+.................... // Controller COR/RX/PTT/AUX pin assignments {{{ 
+.................... #define COR0 RB5 
+.................... #define COR1 RB6 
+.................... #define COR2 RB7 
+....................  
+.................... #define RX_EN0	PIN_C0 
+.................... #define RX_EN1	PIN_C1 
+.................... #define RX_EN2	PIN_C2 
+....................  
+.................... #define PTT0_PIN PIN_C4 
+.................... #define PTT1_PIN PIN_C5 
+.................... #define PTT2_PIN PIN_C6 
+....................  
+.................... #define AUX0_PIN PIN_B4 
+.................... #define AUX1_PIN PIN_A5 
+.................... // Controller COR/RX/PTT/AUX pin assignments }}} 
+....................  
+.................... #include "SITE_ID.h" 
+.................... // Default Functions table. 
+.................... // This table defines the function codes 
+.................... // and the corresponding Program pointer. 
+.................... // Example: 
+.................... // 124* --> Program0 
+.................... // If 124* is entered, Program 0 is executed. 
+.................... // RAO = 4 
+.................... // RBH = 2 
+.................... // RTQ = 1 
+.................... // RX0 = RTQ 
+.................... // RX1 = RBH 
+.................... // RX2 = RAO 
+....................  
+....................  
+.................... #define SITE_ID	         8 
+.................... #define DEFAULT_POLARITY 0 // ALL HIGH COR 
+.................... #define DEFAULT_ENABLE   6 // ENABLE RAO & RBH 
+.................... #define DEFAULT_PWM_PTT  2 // Morse on RBH only 
+.................... #define DEFAULT_RX0_PTT  6 // RX RTQ = Nothing by default 
+.................... #define DEFAULT_RX1_PTT  7 // RX RBH = TX RBH & RAO 
+.................... #define DEFAULT_RX2_PTT  3 // RX RAO = TX RBH Only 
+.................... #define MORSE_ID0        MCHAR('v') 
+.................... #define MORSE_ID1        MCHAR('e') 
+.................... #define MORSE_ID2        2 
+.................... #define MORSE_ID3        MCHAR('r') 
+.................... #define MORSE_ID4        MCHAR('b') 
+.................... #define MORSE_ID5        MCHAR('h') 
+.................... #define DEFAULT_PTT0TO	 5 
+.................... #define DEFAULT_PTT1TO	 5 
+.................... #define DEFAULT_PTT2TO	 5 
+....................  
+.................... const int8 FunctionDefaults[8][5] = { 
+.................... 	{d1+Strb , d5+Strb, d7+Strb , ds+Strb+LastDigit , 0} , // 157* --> Instr 0 (Ouverture) 
+.................... 	{d1+Strb , d5+Strb, d7+Strb , dp+Strb+LastDigit , 2} , // 157# --> Instr 1 (Fermeture) 
+.................... 	{d1+Strb , d0+Strb, d7+Strb , ds+Strb+LastDigit , 0} , // 107* --> Instr 0 (Ouverture) 
+.................... 	{d1+Strb , d0+Strb, d7+Strb , dp+Strb+LastDigit , 2} , // 107# --> Instr 1 (Fermeture) 
+.................... 	{d2+Strb , d3+Strb, d7+Strb , ds+Strb+LastDigit , 4} , // 237* --> Shutdown RAO, 
+.................... 	{d2+Strb , d4+Strb, d7+Strb , ds+Strb+LastDigit , 5} , // 247* --> Shutdown RBH only, 
+.................... 	{d2+Strb , d2+Strb, d7+Strb , ds+Strb+LastDigit , 6} , // 227* --> Shutdown Ripon, 
+.................... 	{ 0 , 0 , 0 , 0 , 0} 
+.................... }; 
+....................  
+.................... #define ProgramDefaultsNum 8 
+.................... // Morse is causing problems because the morse characters span over multiple nibbles!!! 
+.................... const int8 ProgramDefaults[ProgramDefaultsNum][8] = { 
+....................  {UPDATE_PWM_PTT+4, SEND_DTMF+dd,SEND_DTMF+0x01, SEND_DTMF+0x02 , UPDATE_ENABLE + 7, UPDATE_PWM_PTT + 7 ,PAUSE+4, JUMP+1},  // Program 0 --> DTMF(D12) 
+....................  {MORSE+MCHAR('v'), MORSE+MCHAR('e'), MORSE+0x02 , MORSE+MCHAR('r'),MORSE+MCHAR('b'),MORSE+MCHAR('h'), DONE+1 , DONE+0}, // Program 1 
+....................  {UPDATE_PWM_PTT+7, MORSE+MCHAR('v'), MORSE+MCHAR('e'), MORSE+0x02 , MORSE+MCHAR('r'),MORSE+MCHAR('b'),MORSE+MCHAR('h'), JUMP+3 },  // Program 2 
+....................  {UPDATE_PWM_PTT+4, PAUSE+4, SEND_DTMF+dd,SEND_DTMF+0x01, SEND_DTMF+0x00 , UPDATE_ENABLE + 0x06 , DONE+1 , DONE+0 },  // Program 3 --> DTMF(D10) 
+....................  {MORSE+MCHAR('v'), MORSE+MCHAR('e'), MORSE+0x02 , MORSE+MCHAR('r'),MORSE+MCHAR('b'),MORSE+MCHAR('h'), UPDATE_ENABLE + 2, DONE+0},  // Program 4 Shutdown RAO 
+....................  {MORSE+MCHAR('v'), MORSE+MCHAR('e'), MORSE+0x02 , MORSE+MCHAR('r'),MORSE+MCHAR('b'),MORSE+MCHAR('h'), UPDATE_ENABLE + 5, DONE+0},  // Program 5 Shutdown RBH Only 
+....................  {MORSE+MCHAR('v'), MORSE+MCHAR('e'), MORSE+0x02 , MORSE+MCHAR('r'),MORSE+MCHAR('b'),MORSE+MCHAR('h'), UPDATE_ENABLE + 0, DONE+0},  // Program 6 Shutdown Ripon 
+....................  {SEND_DTMF+1  , DONE+1  , DONE+0 , DONE+0 , DONE+0 , DONE+0 , DONE+0 , DONE+0}  // Program 7 
+.................... }; 
+....................  
+.................... //************************** SIN TABLE ************************************* 
+.................... // Samples table : one period sampled on 128 samples and 
+.................... // quantized on 7 bit 
+.................... //f(x)=63+63sin(2*pi*(x/128)) xE[0,127] 
+.................... //************************************************************************** 
+.................... // Variables {{{ 
+.................... const unsigned char auc_SinParam[128] = { 
+.................... 63,66,69,72,75,78,81,84,87,90,93,95,98,101,103,105,108,110,112,114,115,117,119,120,121,122,123,124,125,125,126,126,126,126,126,125,125,124,123,122,121,120,119,117,115,114,112,110,108,105,103,101,98,95,93,90,87,84,81,78,75,72,69,66,63,60,57,54,51,48,45,42,39,36,33,31,28,25,23,21,18,16,14,12,11,9,7,6,5,4,3,2,1,1,0,0,0,0,0,1,1,2,3,4,5,6,7,9,11,12,14,16,18,21,23,25,28,31,33,36,39,42,45,48,51,54,57,60 
+.................... }; 
+....................  
+.................... //***************************  x_SW  *************************************** 
+.................... //Table of x_SW (excess 8): x_SW = ROUND(8*fa,b/f_sine_base) 
+.................... //************************************************************************** 
+....................  
+.................... #define TIMER2_PERIOD   255 
+.................... #define FOSC      8000000/4 // 4 clock cycles per instruction (2MHz effective) 
+.................... #define SINE_PTS    128 
+.................... #define PWM_FREQ    (FOSC/(TIMER2_PERIOD+1)) 
+.................... #define BASE_FREQ    (PWM_FREQ / SINE_PTS)  // Slowest synthesizable period (approx 60Hz) 
+....................  
+.................... //low frequency (row) 
+.................... //697hz  ---> x_SW = 23 
+.................... //770hz  ---> x_SW = 25 
+.................... //852hz  ---> x_SW = 27 
+.................... //941hz  ---> x_SW = 31 
+....................  
+.................... // Corrected each frequency. Actual frequency was measured on an oscilloscope and 
+.................... // the correction factor was calculated based on the difference between the actual 
+.................... // frequency and the target frequency. 
+.................... const unsigned char auc_frequencyL[4] = { 
+....................   (697/BASE_FREQ)*8*1.03, 
+....................   (770/BASE_FREQ)*8*1.05, 
+....................   (852/BASE_FREQ)*8*1.07, 
+....................   (941/BASE_FREQ)*8*1.02}; 
+....................  
+.................... #define MORSE_FREQ (440/BASE_FREQ)*8; 
+....................  
+.................... //high frequency (coloun) 
+.................... //1209hz  ---> x_SW = 40 
+.................... //1336hz  ---> x_SW = 44 
+.................... //1477hz  ---> x_SW = 48 
+.................... //1633hz  ---> x_SW = 54 
+....................  
+.................... const unsigned char auc_frequencyH[4] = { 
+....................   (1209/BASE_FREQ)*8*1.03, 
+....................   (1336/BASE_FREQ)*8*1.04, 
+....................   (1477/BASE_FREQ)*8*1.01, 
+....................   (1633/BASE_FREQ)*8*1.04}; 
+....................  
+.................... //**************************  global variables  **************************** 
+.................... unsigned char x_SWa = 0x00;               // step width of high frequency 
+*
+0F40:  BSF    03.5
+0F41:  CLRF   63
+.................... unsigned char x_SWb = 0x00;               // step width of low frequency 
+0F42:  CLRF   64
+.................... unsigned int16  i_CurSinValA = 0;           // position freq. A in LUT (extended format) 
+0F43:  CLRF   65
+0F44:  CLRF   66
+.................... unsigned int16  i_CurSinValB = 0;           // position freq. B in LUT (extended format) 
+0F45:  CLRF   67
+0F46:  CLRF   68
+.................... unsigned int  i_TmpSinValA;               // position freq. A in LUT (actual position) 
+.................... unsigned int  i_TmpSinValB;               // position freq. B in LUT (actual position) 
+.................... // variables }}} 
+.................... #INT_RTCC 
+.................... void timer0interrupt(void) { // {{{ 
+....................   int in_b; 
+....................   if (sec) { 
+*
+01CA:  MOVF   6F,F
+01CB:  BTFSC  03.2
+01CC:  GOTO   1CF
+....................     sec--; 
+01CD:  DECF   6F,F
+....................   } else { 
+01CE:  GOTO   1DF
+....................     in_b = (input_b() >> 5) & 0x07; 
+01CF:  SWAPF  06,W
+01D0:  MOVWF  20
+01D1:  RRF    20,F
+01D2:  MOVLW  07
+01D3:  ANDWF  20,F
+01D4:  MOVF   20,W
+01D5:  ANDLW  07
+01D6:  BSF    03.6
+01D7:  MOVWF  48
+....................     COR_IN = (sCOR)(in_b^Polarity);  // Refresh COR status each second. 
+01D8:  MOVF   48,W
+01D9:  XORWF  72,W
+01DA:  BCF    03.6
+01DB:  MOVWF  6E
+....................     COR_FLAG=1; 
+01DC:  BSF    5C.1
+....................     sec = 31; 
+01DD:  MOVLW  1F
+01DE:  MOVWF  6F
+....................   } 
+....................   if ( min ) { 
+01DF:  MOVF   70,W
+01E0:  IORWF  71,W
+01E1:  BTFSC  03.2
+01E2:  GOTO   1E8
+....................     min--; 
+01E3:  MOVF   70,W
+01E4:  BTFSC  03.2
+01E5:  DECF   71,F
+01E6:  DECF   70,F
+....................   } else { 
+01E7:  GOTO   1ED
+....................     PTTTimeOutFlag=1; 
+01E8:  BSF    5C.2
+....................     min=1831; 
+01E9:  MOVLW  07
+01EA:  MOVWF  71
+01EB:  MOVLW  27
+01EC:  MOVWF  70
+....................   } 
+.................... //  min = 1831; // 915.527 TMR0 interrupts per minute @4MHz. 
+....................      
+.................... } // }}} 
+.................... // INT_RB {{{ 
+01ED:  BCF    0B.2
+01EE:  BCF    0A.3
+01EF:  GOTO   02A
+.................... #INT_RB 
+.................... void cor_interrupt(void) { 
+....................   int in_b; 
+....................   if ( input(PIN_A4) && !DTMF.Strobe) { 
+01F0:  BTFSS  05.4
+01F1:  GOTO   20E
+01F2:  BTFSC  61.4
+01F3:  GOTO   20E
+....................     DTMF.Key = input_a() & 0xF; // Keep only 4 bits. 
+01F4:  MOVF   05,W
+01F5:  ANDLW  0F
+01F6:  ANDLW  0F
+01F7:  MOVWF  20
+01F8:  MOVLW  F0
+01F9:  ANDWF  61,W
+01FA:  IORWF  20,W
+01FB:  MOVWF  61
+....................     DTMF.Strobe = 1; 
+01FC:  BSF    61.4
+....................     if ( DTMF.Key == 0x0A ) { // Digit 0 --> Swap with "D" 
+01FD:  MOVF   61,W
+01FE:  ANDLW  0F
+01FF:  SUBLW  0A
+0200:  BTFSS  03.2
+0201:  GOTO   206
+....................       DTMF.Key = 0x00; 
+0202:  MOVLW  F0
+0203:  ANDWF  61,W
+0204:  MOVWF  61
+....................     } else if (DTMF.Key == 0x00) { // Digit "D" --> Swap with "0" 
+0205:  GOTO   20E
+0206:  MOVF   61,W
+0207:  ANDLW  0F
+0208:  BTFSS  03.2
+0209:  GOTO   20E
+....................       DTMF.Key = 0x0A; 
+020A:  MOVLW  F0
+020B:  ANDWF  61,W
+020C:  IORLW  0A
+020D:  MOVWF  61
+....................     } 
+....................   } 
+....................   in_b = (input_b() >> 5) & 0x07; 
+020E:  SWAPF  06,W
+020F:  MOVWF  20
+0210:  RRF    20,F
+0211:  MOVLW  07
+0212:  ANDWF  20,F
+0213:  MOVF   20,W
+0214:  ANDLW  07
+0215:  BSF    03.6
+0216:  MOVWF  48
+....................   COR_IN = (sCOR)(in_b^Polarity);   
+0217:  MOVF   48,W
+0218:  XORWF  72,W
+0219:  BCF    03.6
+021A:  MOVWF  6E
+....................   COR_FLAG = 1; 
+021B:  BSF    5C.1
+.................... } // }}} 
+.................... //************************************************************************** 
+.................... // Timer overflow interrupt service routine 
+.................... //************************************************************************** 
+.................... // INT_TIMER2 {{{ 
+021C:  BCF    0B.0
+021D:  BCF    0A.3
+021E:  GOTO   02A
+.................... #INT_TIMER2 
+.................... void timer2interrupt(void) { 
+.................... int DUTY_CYCLE; 
+....................   if (x_SWa == 0 && x_SWb == 0){ 
+021F:  BSF    03.5
+0220:  MOVF   63,F
+0221:  BTFSS  03.2
+0222:  GOTO   22B
+0223:  MOVF   64,F
+0224:  BTFSS  03.2
+0225:  GOTO   22B
+....................     set_pwm1_duty(255); 
+0226:  MOVLW  FF
+0227:  BCF    03.5
+0228:  MOVWF  15
+....................   }else{ 
+0229:  GOTO   280
+022A:  BSF    03.5
+....................   if ( x_SWa ) { 
+022B:  MOVF   63,F
+022C:  BTFSC  03.2
+022D:  GOTO   233
+....................     i_CurSinValA += x_SWa;        
+022E:  MOVF   63,W
+022F:  ADDWF  65,F
+0230:  BTFSC  03.0
+0231:  INCF   66,F
+....................   } else { 
+0232:  GOTO   235
+....................     i_CurSinValA = 0; 
+0233:  CLRF   66
+0234:  CLRF   65
+....................   } 
+....................   if (x_SWb ) { 
+0235:  MOVF   64,F
+0236:  BTFSC  03.2
+0237:  GOTO   23D
+....................       i_CurSinValB += x_SWb; 
+0238:  MOVF   64,W
+0239:  ADDWF  67,F
+023A:  BTFSC  03.0
+023B:  INCF   68,F
+....................   } else { 
+023C:  GOTO   23F
+....................       i_CurSinValB = 0; 
+023D:  CLRF   68
+023E:  CLRF   67
+....................   } 
+....................   i_TmpSinValA  =  (char)(((i_CurSinValA)>>3)&0x7F);  
+023F:  RRF    66,W
+0240:  BCF    03.5
+0241:  BSF    03.6
+0242:  MOVWF  4A
+0243:  BSF    03.5
+0244:  BCF    03.6
+0245:  RRF    65,W
+0246:  BCF    03.5
+0247:  BSF    03.6
+0248:  MOVWF  49
+0249:  RRF    4A,F
+024A:  RRF    49,F
+024B:  RRF    4A,F
+024C:  RRF    49,F
+024D:  MOVLW  1F
+024E:  ANDWF  4A,F
+024F:  MOVF   49,W
+0250:  ANDLW  7F
+0251:  BCF    03.6
+0252:  MOVWF  20
+0253:  CLRF   23
+0254:  MOVF   20,W
+0255:  BSF    03.5
+0256:  MOVWF  69
+....................   i_TmpSinValB  =  (char)(((i_CurSinValB)>>3)&0x7F); 
+0257:  RRF    68,W
+0258:  BCF    03.5
+0259:  BSF    03.6
+025A:  MOVWF  4A
+025B:  BSF    03.5
+025C:  BCF    03.6
+025D:  RRF    67,W
+025E:  BCF    03.5
+025F:  BSF    03.6
+0260:  MOVWF  49
+0261:  RRF    4A,F
+0262:  RRF    49,F
+0263:  RRF    4A,F
+0264:  RRF    49,F
+0265:  MOVLW  1F
+0266:  ANDWF  4A,F
+0267:  MOVF   49,W
+0268:  ANDLW  7F
+0269:  BCF    03.6
+026A:  MOVWF  20
+026B:  CLRF   23
+026C:  MOVF   20,W
+026D:  BSF    03.5
+026E:  MOVWF  6A
+....................   //DUTY_CYCLE = (auc_SinParam[i_TmpSinValA] + (auc_SinParam[i_TmpSinValB]-(auc_SinParam[i_TmpSinValB]>>2))); 
+....................   DUTY_CYCLE = auc_SinParam[i_TmpSinValA]; 
+026F:  MOVF   69,W
+0270:  BCF    03.5
+0271:  CALL   136
+0272:  MOVWF  21
+0273:  BSF    03.6
+0274:  MOVWF  48
+....................   DUTY_CYCLE += auc_SinParam[i_TmpSinValB]; 
+0275:  BSF    03.5
+0276:  BCF    03.6
+0277:  MOVF   6A,W
+0278:  BCF    03.5
+0279:  CALL   136
+027A:  MOVWF  21
+027B:  BSF    03.6
+027C:  ADDWF  48,F
+....................   set_pwm1_duty(DUTY_CYCLE); // Half-way 
+027D:  MOVF   48,W
+027E:  BCF    03.6
+027F:  MOVWF  15
+....................   }   
+.................... } // }}} 
+.................... //************************************************************************** 
+.................... // MORSE functions  
+.................... //************************************************************************** 
+0280:  BCF    0C.1
+0281:  BCF    0A.3
+0282:  GOTO   02A
+.................... void dit (void) { // {{{ 
+....................     unsigned int16 delay; 
+....................     delay = DitDelay * MORSE_MULTIPLIER_ISR_ON; 
+*
+0686:  BSF    03.6
+0687:  CLRF   44
+0688:  MOVLW  0B
+0689:  MOVWF  43
+....................     //  Generate tone 
+....................     x_SWa = 0; 
+068A:  BSF    03.5
+068B:  BCF    03.6
+068C:  CLRF   63
+....................     x_SWb = MORSE_FREQ; 
+068D:  MOVLW  38
+068E:  MOVWF  64
+....................     init_pwm(); 
+068F:  BCF    03.5
+0690:  CALL   668
+....................     delay_ms(delay); 
+0691:  BSF    03.6
+0692:  MOVF   44,W
+0693:  MOVWF  45
+0694:  INCF   45,F
+0695:  DECF   45,F
+0696:  BTFSC  03.2
+0697:  GOTO   69E
+0698:  MOVLW  FF
+0699:  MOVWF  46
+069A:  BCF    03.6
+069B:  CALL   650
+069C:  BSF    03.6
+069D:  GOTO   695
+069E:  MOVF   43,W
+069F:  MOVWF  46
+06A0:  BCF    03.6
+06A1:  CALL   650
+....................     stop_pwm(); 
+06A2:  CALL   67C
+....................     delay_ms(DitDelay * MORSE_MULTIPLIER_ISR_OFF); 
+06A3:  MOVLW  46
+06A4:  BSF    03.6
+06A5:  MOVWF  46
+06A6:  BCF    03.6
+06A7:  CALL   650
+.................... }  // }}} 
+06A8:  RETLW  00
+.................... void dah (void) { // {{{ 
+....................     unsigned int16 delay; 
+....................     delay = DAH_DURATION_RATIO * DitDelay * MORSE_MULTIPLIER_ISR_ON; 
+06A9:  BSF    03.6
+06AA:  CLRF   44
+06AB:  MOVLW  23
+06AC:  MOVWF  43
+....................     //  Generate tone 
+....................     x_SWa = 0; 
+06AD:  BSF    03.5
+06AE:  BCF    03.6
+06AF:  CLRF   63
+....................     x_SWb = MORSE_FREQ; 
+06B0:  MOVLW  38
+06B1:  MOVWF  64
+....................     init_pwm(); 
+06B2:  BCF    03.5
+06B3:  CALL   668
+....................     delay_ms(delay); 
+06B4:  BSF    03.6
+06B5:  MOVF   44,W
+06B6:  MOVWF  45
+06B7:  INCF   45,F
+06B8:  DECF   45,F
+06B9:  BTFSC  03.2
+06BA:  GOTO   6C1
+06BB:  MOVLW  FF
+06BC:  MOVWF  46
+06BD:  BCF    03.6
+06BE:  CALL   650
+06BF:  BSF    03.6
+06C0:  GOTO   6B8
+06C1:  MOVF   43,W
+06C2:  MOVWF  46
+06C3:  BCF    03.6
+06C4:  CALL   650
+....................     stop_pwm(); 
+06C5:  CALL   67C
+....................     delay_ms(DitDelay * MORSE_MULTIPLIER_ISR_OFF); 
+06C6:  MOVLW  46
+06C7:  BSF    03.6
+06C8:  MOVWF  46
+06C9:  BCF    03.6
+06CA:  CALL   650
+.................... } // }}} 
+06CB:  RETLW  00
+.................... void morse(int c) { // {{{ 
+....................   int mc; 
+....................   int x; 
+....................  
+....................   ActivateRXRelays(0); 
+06CC:  BSF    03.6
+06CD:  CLRF   43
+06CE:  BCF    03.6
+06CF:  CALL   50B
+....................   mc = cMorseChar[c];  
+06D0:  BSF    03.6
+06D1:  MOVF   40,W
+06D2:  BCF    03.6
+06D3:  CALL   043
+06D4:  MOVWF  21
+06D5:  BSF    03.6
+06D6:  MOVWF  41
+....................    
+....................   for(x=0;x<4;x++) { 
+06D7:  CLRF   42
+06D8:  MOVF   42,W
+06D9:  SUBLW  03
+06DA:  BTFSS  03.0
+06DB:  GOTO   6F2
+....................     switch(mc & 0xc0) { // Check two MSB's 
+06DC:  MOVF   41,W
+06DD:  ANDLW  C0
+06DE:  XORLW  40
+06DF:  BCF    03.6
+06E0:  BTFSC  03.2
+06E1:  GOTO   6E6
+06E2:  XORLW  C0
+06E3:  BTFSC  03.2
+06E4:  GOTO   6E8
+06E5:  GOTO   6EA
+....................       case(0x40): 
+....................         dit(); 
+06E6:  CALL   686
+....................         break; 
+06E7:  GOTO   6EB
+....................       case(0x80): 
+....................         dah(); 
+06E8:  CALL   6A9
+....................         break; 
+06E9:  GOTO   6EB
+....................       default: 
+....................         break; 
+06EA:  GOTO   6EB
+....................     } 
+....................     mc = mc << 2; // Shift two MSB's out and continue with next ones 
+06EB:  BSF    03.6
+06EC:  RLF    41,F
+06ED:  RLF    41,F
+06EE:  MOVLW  FC
+06EF:  ANDWF  41,F
+....................   } 
+06F0:  INCF   42,F
+06F1:  GOTO   6D8
+....................   if ( c < 10 ) { // Digits --> add the 5th dit or dah. 
+06F2:  MOVF   40,W
+06F3:  SUBLW  09
+06F4:  BTFSS  03.0
+06F5:  GOTO   701
+....................     if ( c < 5 ) { 
+06F6:  MOVF   40,W
+06F7:  SUBLW  04
+06F8:  BTFSS  03.0
+06F9:  GOTO   6FE
+....................       dah(); 
+06FA:  BCF    03.6
+06FB:  CALL   6A9
+....................     } 
+....................     else { 
+06FC:  GOTO   700
+06FD:  BSF    03.6
+....................       dit(); 
+06FE:  BCF    03.6
+06FF:  CALL   686
+0700:  BSF    03.6
+....................     } 
+....................   } 
+....................   delay_ms(DAH_DURATION_RATIO * DitDelay * MORSE_MULTIPLIER_ISR_OFF); 
+0701:  MOVLW  D2
+0702:  MOVWF  46
+0703:  BCF    03.6
+0704:  CALL   650
+....................   return; 
+.................... } // }}} 
+0705:  RETLW  00
+....................  
+.................... //************************************************************************** 
+.................... // Initialization 
+.................... //************************************************************************** 
+.................... // init_pins {{{ 
+.................... void init_pins(void) { 
+....................   set_tris_a(0x1F); 
+*
+05A1:  MOVLW  1F
+05A2:  BSF    03.5
+05A3:  MOVWF  05
+....................   set_tris_b(0xE0);   
+05A4:  MOVLW  E0
+05A5:  MOVWF  06
+....................   set_tris_c(0b010001000); 
+05A6:  MOVLW  88
+05A7:  MOVWF  07
+....................   output_bit(PTT0_PIN,0); 
+05A8:  BCF    03.5
+05A9:  BCF    07.4
+....................   output_bit(PTT1_PIN,0); 
+05AA:  BCF    07.5
+....................   output_bit(PTT2_PIN,0); 
+05AB:  BCF    07.6
+....................       UpdatePTT=0; 
+05AC:  BCF    5C.0
+....................   output_bit(AUX0_PIN,0); 
+05AD:  BCF    06.4
+....................   output_bit(AUX1_PIN,0); 
+05AE:  BCF    05.5
+....................   enable_interrupts(INT_RB5|INT_RB6|INT_RB7); 
+05AF:  BSF    0B.3
+05B0:  MOVLW  E0
+05B1:  BSF    03.6
+05B2:  IORWF  16,F
+....................   ActivateRXRelays(0); 
+05B3:  CLRF   43
+05B4:  BCF    03.6
+05B5:  CALL   50B
+....................   // debug pins 
+.................... } // }}} 
+05B6:  BSF    0A.3
+05B7:  GOTO   76E (RETURN)
+.................... // init {{{ 
+.................... void init ( void )  
+.................... { 
+....................   // Setup TIMER0 as the main delay counter 
+....................   //OPTION = 0b0111;  // prescale by 256 
+....................   sec=0; 
+*
+04E6:  CLRF   6F
+....................   min=0; 
+04E7:  CLRF   71
+04E8:  CLRF   70
+....................   PgmMode=0; 
+04E9:  CLRF   5E
+....................   setup_timer_0 (RTCC_DIV_256|RTCC_INTERNAL); 
+04EA:  BSF    03.5
+04EB:  MOVF   01,W
+04EC:  ANDLW  C0
+04ED:  IORLW  07
+04EE:  MOVWF  01
+....................   set_timer0(0); 
+04EF:  BCF    03.5
+04F0:  CLRF   01
+....................   CALIBRATE_DTMF_FLAG = 0; 
+04F1:  BCF    5C.3
+....................   enable_interrupts(INT_RTCC); 
+04F2:  BSF    0B.5
+....................    
+....................   // Set up DTMF and functions tables; 
+....................         DTMF = (sDTMF)0; 
+04F3:  CLRF   61
+....................   // Program PgmMode function: 
+....................   // * 9 9  
+....................         Function[FUNCTION_NUM].Digit[0].Key     = 0x0D; 
+04F4:  MOVLW  F0
+04F5:  ANDWF  56,W
+04F6:  IORLW  0D
+04F7:  MOVWF  56
+....................         Function[FUNCTION_NUM].Digit[0].Strobe  = 1; 
+04F8:  BSF    56.4
+....................         Function[FUNCTION_NUM].Digit[0].LastKey = 0; 
+04F9:  BCF    56.5
+....................         Function[FUNCTION_NUM].Digit[1].Key     = 9; 
+04FA:  MOVLW  F0
+04FB:  ANDWF  57,W
+04FC:  IORLW  09
+04FD:  MOVWF  57
+....................         Function[FUNCTION_NUM].Digit[1].Strobe  = 1; 
+04FE:  BSF    57.4
+....................         Function[FUNCTION_NUM].Digit[1].LastKey = 0; 
+04FF:  BCF    57.5
+....................         Function[FUNCTION_NUM].Digit[2].Key     = 9; 
+0500:  MOVLW  F0
+0501:  ANDWF  58,W
+0502:  IORLW  09
+0503:  MOVWF  58
+....................         Function[FUNCTION_NUM].Digit[2].Strobe  = 1; 
+0504:  BSF    58.4
+....................         Function[FUNCTION_NUM].Digit[2].LastKey = 1; 
+0505:  BSF    58.5
+....................         Function[FUNCTION_NUM].Digit[3]         = (sDTMF)0; 
+0506:  CLRF   59
+....................         Function[FUNCTION_NUM].PgmPtr           = 8; 
+0507:  MOVLW  08
+0508:  MOVWF  5A
+.................... } // }}} 
+0509:  BSF    0A.3
+050A:  GOTO   76B (RETURN)
+.................... // init_pwm {{{ 
+.................... void init_pwm (void) 
+.................... { 
+....................   disable_interrupts(INT_RTCC); 
+*
+0668:  BCF    0B.5
+....................   //setup_ccp1(CCP_PWM | CCP_PULSE_STEERING_C,CCP_PWM_H_H); 
+....................   //setup_ccp1(CCP_PWM | CCP_PULSE_STEERING_C | CCP_PULSE_STEERING_SYNC); 
+....................   CCP1CON = 0x0C; 
+0669:  MOVLW  0C
+066A:  MOVWF  17
+....................   PSTRCON = 0x04; 
+066B:  MOVLW  04
+066C:  BSF    03.5
+066D:  BSF    03.6
+066E:  MOVWF  1D
+....................   setup_timer_2 (T2_DIV_BY_1,TIMER2_PERIOD,1); 
+066F:  MOVLW  00
+0670:  BCF    03.5
+0671:  BCF    03.6
+0672:  MOVWF  21
+0673:  IORLW  04
+0674:  MOVWF  12
+0675:  MOVLW  FF
+0676:  BSF    03.5
+0677:  MOVWF  12
+....................   enable_interrupts(INT_TIMER2); 
+0678:  BSF    0C.1
+....................   output_drive(PIN_C3); 
+0679:  BCF    07.3
+.................... } // }}} 
+067A:  BCF    03.5
+067B:  RETLW  00
+.................... // stop_pwm {{{ 
+.................... void stop_pwm (void) { 
+....................   setup_ccp1(CCP_OFF); 
+067C:  CLRF   17
+067D:  CLRF   1C
+....................   disable_interrupts(INT_TIMER2); 
+067E:  BSF    03.5
+067F:  BCF    0C.1
+....................   enable_interrupts(INT_RTCC); 
+0680:  BCF    03.5
+0681:  BSF    0B.5
+....................   output_float(PIN_C3); 
+0682:  BSF    03.5
+0683:  BSF    07.3
+.................... } // }}} 
+0684:  BCF    03.5
+0685:  RETLW  00
+.................... // ProcessCorFlag {{{ 
+.................... void ProcessCorFlag(void) { 
+....................   //COR_IN = (sCOR)(((input_b() >> 4)&0x07)^Polarity); 
+....................   ActivateRXRelays((int)COR_IN); 
+.................... } 
+.................... // ProcessCorFlag }}} 
+.................... // ActivateRXRelays(int) {{{ 
+.................... void ActivateRXRelays(int cor_in) { 
+....................   int ActiveRelay; 
+....................     int ActiveCOR; 
+....................     int1 NewLocalCOR; // High when a new cor arrives on a local radio 
+....................     int1 NewCOR,NoCOR; 
+....................     // Only RX on radios 2 and 3 can override a relay. 
+....................     // If cor_in==0 then also do processing (disable relays) 
+....................     ActiveCOR = cor_in & Enable & 0x02; // High for COR's that are enabled 
+*
+050B:  BSF    03.6
+050C:  MOVF   43,W
+050D:  BCF    03.6
+050E:  ANDWF  5D,W
+050F:  ANDLW  02
+0510:  BSF    03.6
+0511:  MOVWF  45
+....................     NewCOR=!(ActiveRelay & ActiveCOR); 
+0512:  BCF    46.1
+0513:  MOVF   44,W
+0514:  ANDWF  45,W
+0515:  BTFSC  03.2
+0516:  BSF    46.1
+....................     NewLocalCOR=!(ActiveRelay & ActiveCOR & 0x06); 
+0517:  BCF    46.0
+0518:  MOVF   44,W
+0519:  ANDWF  45,W
+051A:  ANDLW  06
+051B:  BTFSC  03.2
+051C:  BSF    46.0
+....................     NoCOR=!(ActiveCOR); 
+051D:  BCF    46.2
+051E:  MOVF   45,F
+051F:  BTFSC  03.2
+0520:  BSF    46.2
+....................  
+.................... //    if ( (ActiveRelay < 0x02) || NoCOR || NewCOR) {  
+.................... // JL  2016-08-21 Change for 4 for Priority on Radio 2 
+....................     if ( (ActiveRelay < 0x04) || NoCOR || NewCOR) {   
+0521:  MOVF   44,W
+0522:  SUBLW  03
+0523:  BTFSC  03.0
+0524:  GOTO   529
+0525:  BTFSC  46.2
+0526:  GOTO   529
+0527:  BTFSS  46.1
+0528:  GOTO   59F
+....................       if((ActiveCOR & 0x04) || (NoCOR && (cor_in&0x04))) { 
+0529:  BTFSC  45.2
+052A:  GOTO   52F
+052B:  BTFSS  46.2
+052C:  GOTO   54D
+052D:  BTFSS  43.2
+052E:  GOTO   54D
+....................       output_bit(RX_EN1,0); 
+052F:  BCF    03.6
+0530:  BCF    07.1
+....................       output_bit(RX_EN0,0); 
+0531:  BCF    07.0
+....................       output_bit(RX_EN2,1); 
+0532:  BSF    07.2
+....................       ActiveRelay=4; 
+0533:  MOVLW  04
+0534:  BSF    03.6
+0535:  MOVWF  44
+....................       if ( Enable & 0x04) { 
+0536:  BCF    03.6
+0537:  BTFSS  5D.2
+0538:  GOTO   547
+....................         if( NewLocalCOR ) { 
+0539:  BSF    03.6
+053A:  BTFSS  46.0
+053B:  GOTO   545
+....................           PTT=RX2_PTT & Enable; 
+053C:  MOVF   75,W
+053D:  BCF    03.6
+053E:  ANDWF  5D,W
+053F:  MOVWF  5B
+....................           PTTTimeOutTimer = PTT2TimeOut; 
+0540:  BSF    03.5
+0541:  MOVF   61,W
+0542:  MOVWF  62
+0543:  BCF    03.5
+0544:  BSF    03.6
+....................         } 
+....................       } else { 
+0545:  GOTO   549
+0546:  BCF    03.6
+....................         PTT=0; 
+0547:  CLRF   5B
+0548:  BSF    03.6
+....................       } 
+....................       UpdatePTT=1; 
+0549:  BCF    03.6
+054A:  BSF    5C.0
+....................     } else if ((ActiveCOR & 0x02)||(NoCOR && (cor_in&0x02))) { 
+054B:  GOTO   59E
+054C:  BSF    03.6
+054D:  BTFSC  45.1
+054E:  GOTO   553
+054F:  BTFSS  46.2
+0550:  GOTO   571
+0551:  BTFSS  43.1
+0552:  GOTO   571
+....................       output_bit(RX_EN2,0); 
+0553:  BCF    03.6
+0554:  BCF    07.2
+....................       output_bit(RX_EN0,0); 
+0555:  BCF    07.0
+....................       output_bit(RX_EN1,1); 
+0556:  BSF    07.1
+....................       ActiveRelay=2; 
+0557:  MOVLW  02
+0558:  BSF    03.6
+0559:  MOVWF  44
+....................       if ( Enable & 0x02 ) { 
+055A:  BCF    03.6
+055B:  BTFSS  5D.1
+055C:  GOTO   56B
+....................         if ( NewLocalCOR ) { 
+055D:  BSF    03.6
+055E:  BTFSS  46.0
+055F:  GOTO   569
+....................           PTT=RX1_PTT & Enable; 
+0560:  MOVF   74,W
+0561:  BCF    03.6
+0562:  ANDWF  5D,W
+0563:  MOVWF  5B
+....................           PTTTimeOutTimer = PTT1TimeOut; 
+0564:  BSF    03.5
+0565:  MOVF   60,W
+0566:  MOVWF  62
+0567:  BCF    03.5
+0568:  BSF    03.6
+....................         } 
+....................       } else { 
+0569:  GOTO   56D
+056A:  BCF    03.6
+....................         PTT=0; 
+056B:  CLRF   5B
+056C:  BSF    03.6
+....................       } 
+....................       UpdatePTT=1; 
+056D:  BCF    03.6
+056E:  BSF    5C.0
+....................     } else if((ActiveCOR & 0x01)||(NoCOR && (cor_in&0x01))) { 
+056F:  GOTO   59E
+0570:  BSF    03.6
+0571:  BTFSC  45.0
+0572:  GOTO   577
+0573:  BTFSS  46.2
+0574:  GOTO   595
+0575:  BTFSS  43.0
+0576:  GOTO   595
+....................       output_bit(RX_EN2,0); 
+0577:  BCF    03.6
+0578:  BCF    07.2
+....................       output_bit(RX_EN1,0); 
+0579:  BCF    07.1
+....................       output_bit(RX_EN0,1); 
+057A:  BSF    07.0
+....................       ActiveRelay=1; 
+057B:  MOVLW  01
+057C:  BSF    03.6
+057D:  MOVWF  44
+....................       if ( Enable & 0x01 ) { 
+057E:  BCF    03.6
+057F:  BTFSS  5D.0
+0580:  GOTO   58F
+....................         if ( NewCOR ) { 
+0581:  BSF    03.6
+0582:  BTFSS  46.1
+0583:  GOTO   58D
+....................           PTT=RX0_PTT & Enable; 
+0584:  MOVF   73,W
+0585:  BCF    03.6
+0586:  ANDWF  5D,W
+0587:  MOVWF  5B
+....................           PTTTimeOutTimer = PTT0TimeOut; 
+0588:  MOVF   7E,W
+0589:  BSF    03.5
+058A:  MOVWF  62
+058B:  BCF    03.5
+058C:  BSF    03.6
+....................         } 
+....................       } else { 
+058D:  GOTO   591
+058E:  BCF    03.6
+....................         PTT=0; 
+058F:  CLRF   5B
+0590:  BSF    03.6
+....................       } 
+....................       UpdatePTT=1; 
+0591:  BCF    03.6
+0592:  BSF    5C.0
+....................     } else { 
+0593:  GOTO   59E
+0594:  BSF    03.6
+....................       output_bit(RX_EN2,0); 
+0595:  BCF    03.6
+0596:  BCF    07.2
+....................       output_bit(RX_EN1,0); 
+0597:  BCF    07.1
+....................       output_bit(RX_EN0,0); 
+0598:  BCF    07.0
+....................       ActiveRelay = 0; 
+0599:  BSF    03.6
+059A:  CLRF   44
+....................       PTT=0; 
+059B:  BCF    03.6
+059C:  CLRF   5B
+....................       UpdatePTT=1; 
+059D:  BSF    5C.0
+059E:  BSF    03.6
+....................     } 
+....................   } 
+.................... } 
+059F:  BCF    03.6
+05A0:  RETLW  00
+.................... // }}} 
+.................... // sync -- Synchronize RAM--EEPROM--FactoryDefaults{{{ 
+.................... void sync(int * reg,int ee,int dv,int action) { 
+.................... int ee_data; 
+....................  
+....................   if ( action == SYNC_DEFAULT ) { 
+*
+02D0:  BSF    03.6
+02D1:  MOVF   44,W
+02D2:  SUBLW  02
+02D3:  BTFSS  03.2
+02D4:  GOTO   2E3
+....................     *reg = dv; 
+02D5:  MOVF   41,W
+02D6:  BCF    03.6
+02D7:  MOVWF  23
+02D8:  BSF    03.6
+02D9:  MOVF   40,W
+02DA:  MOVWF  04
+02DB:  BCF    03.7
+02DC:  BCF    03.6
+02DD:  BTFSC  23.0
+02DE:  BSF    03.7
+02DF:  BSF    03.6
+02E0:  MOVF   43,W
+02E1:  MOVWF  00
+....................   } else { 
+02E2:  GOTO   335
+....................     ee_data = read_eeprom(ee); 
+02E3:  MOVF   42,W
+02E4:  MOVWF  0D
+02E5:  BSF    03.5
+02E6:  BCF    0C.7
+02E7:  BSF    0C.0
+02E8:  BCF    03.5
+02E9:  MOVF   0C,W
+02EA:  MOVWF  45
+....................     if ( action == SYNC_RAM ) { 
+02EB:  MOVF   44,F
+02EC:  BTFSS  03.2
+02ED:  GOTO   2FC
+....................       *reg = ee_data; 
+02EE:  MOVF   41,W
+02EF:  BCF    03.6
+02F0:  MOVWF  23
+02F1:  BSF    03.6
+02F2:  MOVF   40,W
+02F3:  MOVWF  04
+02F4:  BCF    03.7
+02F5:  BCF    03.6
+02F6:  BTFSC  23.0
+02F7:  BSF    03.7
+02F8:  BSF    03.6
+02F9:  MOVF   45,W
+02FA:  MOVWF  00
+....................     } else 
+02FB:  GOTO   335
+....................     if ( action == SYNC_EEPROM ) { 
+02FC:  DECFSZ 44,W
+02FD:  GOTO   335
+....................       if ( ee_data != *reg ) { 
+02FE:  MOVF   41,W
+02FF:  BCF    03.6
+0300:  MOVWF  23
+0301:  BSF    03.6
+0302:  MOVF   40,W
+0303:  MOVWF  04
+0304:  BCF    03.7
+0305:  BCF    03.6
+0306:  BTFSC  23.0
+0307:  BSF    03.7
+0308:  MOVF   00,W
+0309:  BSF    03.6
+030A:  SUBWF  45,W
+030B:  BTFSC  03.2
+030C:  GOTO   335
+....................         write_eeprom(ee,*reg); 
+030D:  MOVF   41,W
+030E:  BCF    03.6
+030F:  MOVWF  23
+0310:  BSF    03.6
+0311:  MOVF   40,W
+0312:  MOVWF  04
+0313:  BCF    03.7
+0314:  BCF    03.6
+0315:  BTFSC  23.0
+0316:  BSF    03.7
+0317:  MOVF   00,W
+0318:  BSF    03.6
+0319:  MOVWF  46
+031A:  MOVF   42,W
+031B:  MOVWF  0D
+031C:  MOVF   46,W
+031D:  MOVWF  0C
+031E:  BSF    03.5
+031F:  BCF    0C.7
+0320:  BSF    0C.2
+0321:  BCF    03.5
+0322:  BCF    03.6
+0323:  MOVF   0B,W
+0324:  MOVWF  20
+0325:  BCF    0B.7
+0326:  BSF    03.5
+0327:  BSF    03.6
+0328:  MOVLW  55
+0329:  MOVWF  0D
+032A:  MOVLW  AA
+032B:  MOVWF  0D
+032C:  BSF    0C.1
+032D:  BTFSC  0C.1
+032E:  GOTO   32D
+032F:  BCF    0C.2
+0330:  BCF    03.5
+0331:  BCF    03.6
+0332:  MOVF   20,W
+0333:  IORWF  0B,F
+0334:  BSF    03.6
+....................       } 
+....................     } 
+....................   } 
+.................... } 
+0335:  BCF    03.6
+0336:  RETLW  00
+.................... // }}} 
+.................... // sync_data {{{ 
+.................... void sync_data(int action) { 
+.................... // Action:  
+.................... // 0 --> Get data from EEPROM 
+.................... // 1 --> Save RAM data into EEPROM 
+.................... // 2 --> Initialize RAM with factory defaults 
+....................   int x,d; 
+....................   int Default; 
+....................   int Instr; 
+....................   int PgmPtr; 
+....................   int ee_ptr; 
+....................  
+....................   ee_ptr = 0; 
+0337:  BSF    03.6
+0338:  CLRF   3B
+.................... // Initialize function defaults  
+.................... // EE locations 0 : 39 (0x00 - 0x27) 
+....................   for(x=0;x<8;x++) { 
+0339:  CLRF   36
+033A:  MOVF   36,W
+033B:  SUBLW  07
+033C:  BTFSS  03.0
+033D:  GOTO   3A0
+....................     for(d=0;d<4;d++) { 
+033E:  CLRF   37
+033F:  MOVF   37,W
+0340:  SUBLW  03
+0341:  BTFSS  03.0
+0342:  GOTO   376
+....................       Default = FunctionDefaults[x][d]; 
+0343:  MOVF   36,W
+0344:  MOVWF  3C
+0345:  MOVLW  05
+0346:  MOVWF  3D
+0347:  BCF    03.6
+0348:  CALL   283
+0349:  BSF    03.6
+034A:  MOVF   37,W
+034B:  BCF    03.6
+034C:  ADDWF  21,W
+034D:  CALL   0C3
+034E:  MOVWF  21
+034F:  BSF    03.6
+0350:  MOVWF  38
+....................       sync(&Function[x].Digit[d],ee_ptr,Default,action); 
+0351:  MOVF   36,W
+0352:  MOVWF  3C
+0353:  MOVLW  05
+0354:  MOVWF  3D
+0355:  BCF    03.6
+0356:  CALL   283
+0357:  BSF    03.6
+0358:  MOVF   37,W
+0359:  BCF    03.6
+035A:  ADDWF  21,W
+035B:  ADDLW  2E
+035C:  MOVWF  21
+035D:  CLRF   23
+035E:  BTFSC  03.0
+035F:  INCF   23,F
+0360:  MOVF   21,W
+0361:  BSF    03.6
+0362:  MOVWF  3E
+0363:  BCF    03.6
+0364:  MOVF   23,W
+0365:  BSF    03.6
+0366:  MOVWF  3F
+0367:  MOVWF  41
+0368:  MOVF   3E,W
+0369:  MOVWF  40
+036A:  MOVF   3B,W
+036B:  MOVWF  42
+036C:  MOVF   38,W
+036D:  MOVWF  43
+036E:  MOVF   35,W
+036F:  MOVWF  44
+0370:  BCF    03.6
+0371:  CALL   2D0
+....................       ee_ptr++; 
+0372:  BSF    03.6
+0373:  INCF   3B,F
+....................     } 
+0374:  INCF   37,F
+0375:  GOTO   33F
+....................     PgmPtr = FunctionDefaults[x][4]; 
+0376:  MOVF   36,W
+0377:  MOVWF  3C
+0378:  MOVLW  05
+0379:  MOVWF  3D
+037A:  BCF    03.6
+037B:  CALL   283
+037C:  MOVLW  04
+037D:  ADDWF  21,W
+037E:  CALL   0C3
+037F:  MOVWF  21
+0380:  BSF    03.6
+0381:  MOVWF  3A
+....................     sync(&Function[x].PgmPtr,ee_ptr,PgmPtr,action); 
+0382:  MOVF   36,W
+0383:  MOVWF  3C
+0384:  MOVLW  05
+0385:  MOVWF  3D
+0386:  BCF    03.6
+0387:  CALL   283
+0388:  MOVLW  04
+0389:  ADDWF  21,W
+038A:  ADDLW  2E
+038B:  BSF    03.6
+038C:  MOVWF  3D
+038D:  CLRF   3E
+038E:  BTFSC  03.0
+038F:  INCF   3E,F
+0390:  MOVF   3E,W
+0391:  MOVWF  41
+0392:  MOVF   3D,W
+0393:  MOVWF  40
+0394:  MOVF   3B,W
+0395:  MOVWF  42
+0396:  MOVF   3A,W
+0397:  MOVWF  43
+0398:  MOVF   35,W
+0399:  MOVWF  44
+039A:  BCF    03.6
+039B:  CALL   2D0
+....................     ee_ptr++; 
+039C:  BSF    03.6
+039D:  INCF   3B,F
+....................   } 
+039E:  INCF   36,F
+039F:  GOTO   33A
+.................... // initialize Program defaults 
+.................... // ProgramDefaultsNum : 8 
+.................... // 8 ints per program 
+.................... // EE locations  32 : 95 
+.................... // EE locations  40:103 (0x28:0x67) 
+....................   for(x=0;x<ProgramDefaultsNum;x++) { 
+03A0:  CLRF   36
+03A1:  MOVF   36,W
+03A2:  SUBLW  07
+03A3:  BTFSS  03.0
+03A4:  GOTO   3E1
+....................     for(d=0;d<8;d++) { 
+03A5:  CLRF   37
+03A6:  MOVF   37,W
+03A7:  SUBLW  07
+03A8:  BTFSS  03.0
+03A9:  GOTO   3DF
+....................     Instr = ProgramDefaults[x][d]; 
+03AA:  RLF    36,W
+03AB:  BCF    03.6
+03AC:  MOVWF  20
+03AD:  RLF    20,F
+03AE:  RLF    20,F
+03AF:  MOVLW  F8
+03B0:  ANDWF  20,F
+03B1:  MOVF   20,W
+03B2:  BSF    03.6
+03B3:  ADDWF  37,W
+03B4:  BCF    03.6
+03B5:  CALL   0EF
+03B6:  MOVWF  21
+03B7:  BSF    03.6
+03B8:  MOVWF  39
+....................       sync(&Program[x].Instruction[d],ee_ptr,Instr,action); 
+03B9:  RLF    36,W
+03BA:  BCF    03.6
+03BB:  MOVWF  20
+03BC:  RLF    20,F
+03BD:  RLF    20,F
+03BE:  MOVLW  F8
+03BF:  ANDWF  20,F
+03C0:  MOVF   20,W
+03C1:  BSF    03.6
+03C2:  ADDWF  37,W
+03C3:  ADDLW  A0
+03C4:  BCF    03.6
+03C5:  MOVWF  21
+03C6:  CLRF   23
+03C7:  BTFSC  03.0
+03C8:  INCF   23,F
+03C9:  MOVF   21,W
+03CA:  BSF    03.6
+03CB:  MOVWF  3E
+03CC:  BCF    03.6
+03CD:  MOVF   23,W
+03CE:  BSF    03.6
+03CF:  MOVWF  3F
+03D0:  MOVWF  41
+03D1:  MOVF   3E,W
+03D2:  MOVWF  40
+03D3:  MOVF   3B,W
+03D4:  MOVWF  42
+03D5:  MOVF   39,W
+03D6:  MOVWF  43
+03D7:  MOVF   35,W
+03D8:  MOVWF  44
+03D9:  BCF    03.6
+03DA:  CALL   2D0
+....................       ee_ptr++; 
+03DB:  BSF    03.6
+03DC:  INCF   3B,F
+....................     } 
+03DD:  INCF   37,F
+03DE:  GOTO   3A6
+....................   } 
+03DF:  INCF   36,F
+03E0:  GOTO   3A1
+.................... // Polarity 
+.................... // EE location : 104 
+....................     sync(&Polarity  ,ee_ptr,DEFAULT_POLARITY,action); ee_ptr++; // EE location 104 (0x68) 
+03E1:  CLRF   41
+03E2:  MOVLW  72
+03E3:  MOVWF  40
+03E4:  MOVF   3B,W
+03E5:  MOVWF  42
+03E6:  CLRF   43
+03E7:  MOVF   35,W
+03E8:  MOVWF  44
+03E9:  BCF    03.6
+03EA:  CALL   2D0
+03EB:  BSF    03.6
+03EC:  INCF   3B,F
+....................     sync(&Enable    ,ee_ptr,DEFAULT_ENABLE  ,action); ee_ptr++; // EE location 105 (0x69) 
+03ED:  CLRF   41
+03EE:  MOVLW  5D
+03EF:  MOVWF  40
+03F0:  MOVF   3B,W
+03F1:  MOVWF  42
+03F2:  MOVLW  06
+03F3:  MOVWF  43
+03F4:  MOVF   35,W
+03F5:  MOVWF  44
+03F6:  BCF    03.6
+03F7:  CALL   2D0
+03F8:  BSF    03.6
+03F9:  INCF   3B,F
+....................     sync(&RX0_PTT   ,ee_ptr,DEFAULT_RX0_PTT ,action); ee_ptr++; // EE location 106 (0x6A) 
+03FA:  CLRF   41
+03FB:  MOVLW  73
+03FC:  MOVWF  40
+03FD:  MOVF   3B,W
+03FE:  MOVWF  42
+03FF:  MOVLW  06
+0400:  MOVWF  43
+0401:  MOVF   35,W
+0402:  MOVWF  44
+0403:  BCF    03.6
+0404:  CALL   2D0
+0405:  BSF    03.6
+0406:  INCF   3B,F
+....................     sync(&RX1_PTT   ,ee_ptr,DEFAULT_RX1_PTT ,action); ee_ptr++; // EE location 107 (0x6B) 
+0407:  CLRF   41
+0408:  MOVLW  74
+0409:  MOVWF  40
+040A:  MOVF   3B,W
+040B:  MOVWF  42
+040C:  MOVLW  07
+040D:  MOVWF  43
+040E:  MOVF   35,W
+040F:  MOVWF  44
+0410:  BCF    03.6
+0411:  CALL   2D0
+0412:  BSF    03.6
+0413:  INCF   3B,F
+....................     sync(&RX2_PTT   ,ee_ptr,DEFAULT_RX2_PTT ,action); ee_ptr++; // EE location 108 (0x6C) 
+0414:  CLRF   41
+0415:  MOVLW  75
+0416:  MOVWF  40
+0417:  MOVF   3B,W
+0418:  MOVWF  42
+0419:  MOVLW  03
+041A:  MOVWF  43
+041B:  MOVF   35,W
+041C:  MOVWF  44
+041D:  BCF    03.6
+041E:  CALL   2D0
+041F:  BSF    03.6
+0420:  INCF   3B,F
+....................     sync(&SiteID    ,ee_ptr,SITE_ID         ,action); ee_ptr++; // EE location 109 (0x6D) 
+0421:  CLRF   41
+0422:  MOVLW  77
+0423:  MOVWF  40
+0424:  MOVF   3B,W
+0425:  MOVWF  42
+0426:  MOVLW  08
+0427:  MOVWF  43
+0428:  MOVF   35,W
+0429:  MOVWF  44
+042A:  BCF    03.6
+042B:  CALL   2D0
+042C:  BSF    03.6
+042D:  INCF   3B,F
+....................     sync(&MorseID[0],ee_ptr,MORSE_ID0      ,action); ee_ptr++;   // EE location 110 (0x6E) 
+042E:  CLRF   41
+042F:  MOVLW  78
+0430:  MOVWF  40
+0431:  MOVF   3B,W
+0432:  MOVWF  42
+0433:  MOVLW  1F
+0434:  MOVWF  43
+0435:  MOVF   35,W
+0436:  MOVWF  44
+0437:  BCF    03.6
+0438:  CALL   2D0
+0439:  BSF    03.6
+043A:  INCF   3B,F
+....................     sync(&MorseID[1],ee_ptr,MORSE_ID1      ,action); ee_ptr++;   // EE location 111 (0x6F) 
+043B:  CLRF   41
+043C:  MOVLW  79
+043D:  MOVWF  40
+043E:  MOVF   3B,W
+043F:  MOVWF  42
+0440:  MOVLW  0E
+0441:  MOVWF  43
+0442:  MOVF   35,W
+0443:  MOVWF  44
+0444:  BCF    03.6
+0445:  CALL   2D0
+0446:  BSF    03.6
+0447:  INCF   3B,F
+....................     sync(&MorseID[2],ee_ptr,MORSE_ID2      ,action); ee_ptr++;   // EE location 112 (0x70) 
+0448:  CLRF   41
+0449:  MOVLW  7A
+044A:  MOVWF  40
+044B:  MOVF   3B,W
+044C:  MOVWF  42
+044D:  MOVLW  02
+044E:  MOVWF  43
+044F:  MOVF   35,W
+0450:  MOVWF  44
+0451:  BCF    03.6
+0452:  CALL   2D0
+0453:  BSF    03.6
+0454:  INCF   3B,F
+....................     sync(&MorseID[3],ee_ptr,MORSE_ID3      ,action); ee_ptr++;   // EE location 113 (0x71) 
+0455:  CLRF   41
+0456:  MOVLW  7B
+0457:  MOVWF  40
+0458:  MOVF   3B,W
+0459:  MOVWF  42
+045A:  MOVLW  1B
+045B:  MOVWF  43
+045C:  MOVF   35,W
+045D:  MOVWF  44
+045E:  BCF    03.6
+045F:  CALL   2D0
+0460:  BSF    03.6
+0461:  INCF   3B,F
+....................     sync(&MorseID[4],ee_ptr,MORSE_ID4      ,action); ee_ptr++;   // EE location 114 (0x72) 
+0462:  CLRF   41
+0463:  MOVLW  7C
+0464:  MOVWF  40
+0465:  MOVF   3B,W
+0466:  MOVWF  42
+0467:  MOVLW  0B
+0468:  MOVWF  43
+0469:  MOVF   35,W
+046A:  MOVWF  44
+046B:  BCF    03.6
+046C:  CALL   2D0
+046D:  BSF    03.6
+046E:  INCF   3B,F
+....................     sync(&MorseID[5],ee_ptr,MORSE_ID5      ,action); ee_ptr++;   // EE location 115 (0x73) 
+046F:  CLRF   41
+0470:  MOVLW  7D
+0471:  MOVWF  40
+0472:  MOVF   3B,W
+0473:  MOVWF  42
+0474:  MOVLW  11
+0475:  MOVWF  43
+0476:  MOVF   35,W
+0477:  MOVWF  44
+0478:  BCF    03.6
+0479:  CALL   2D0
+047A:  BSF    03.6
+047B:  INCF   3B,F
+....................     sync(&PWM_PTT    ,ee_ptr,DEFAULT_PWM_PTT ,action); ee_ptr++; // EE location 116 (0x74) 
+047C:  CLRF   41
+047D:  MOVLW  76
+047E:  MOVWF  40
+047F:  MOVF   3B,W
+0480:  MOVWF  42
+0481:  MOVLW  02
+0482:  MOVWF  43
+0483:  MOVF   35,W
+0484:  MOVWF  44
+0485:  BCF    03.6
+0486:  CALL   2D0
+0487:  BSF    03.6
+0488:  INCF   3B,F
+....................     sync(&PTT0TimeOut,ee_ptr,DEFAULT_PTT0TO  ,action); ee_ptr++; // EE location 117 (0x75) 
+0489:  CLRF   41
+048A:  MOVLW  7E
+048B:  MOVWF  40
+048C:  MOVF   3B,W
+048D:  MOVWF  42
+048E:  MOVLW  05
+048F:  MOVWF  43
+0490:  MOVF   35,W
+0491:  MOVWF  44
+0492:  BCF    03.6
+0493:  CALL   2D0
+0494:  BSF    03.6
+0495:  INCF   3B,F
+....................     sync(&PTT1TimeOut,ee_ptr,DEFAULT_PTT1TO  ,action); ee_ptr++; // EE location 118 (0x76) 
+0496:  CLRF   41
+0497:  MOVLW  E0
+0498:  MOVWF  40
+0499:  MOVF   3B,W
+049A:  MOVWF  42
+049B:  MOVLW  05
+049C:  MOVWF  43
+049D:  MOVF   35,W
+049E:  MOVWF  44
+049F:  BCF    03.6
+04A0:  CALL   2D0
+04A1:  BSF    03.6
+04A2:  INCF   3B,F
+....................     sync(&PTT2TimeOut,ee_ptr,DEFAULT_PTT2TO  ,action); ee_ptr++; // EE location 119 (0x77) 
+04A3:  CLRF   41
+04A4:  MOVLW  E1
+04A5:  MOVWF  40
+04A6:  MOVF   3B,W
+04A7:  MOVWF  42
+04A8:  MOVLW  05
+04A9:  MOVWF  43
+04AA:  MOVF   35,W
+04AB:  MOVWF  44
+04AC:  BCF    03.6
+04AD:  CALL   2D0
+04AE:  BSF    03.6
+04AF:  INCF   3B,F
+....................     for (x=0;x<16;x++) { 
+04B0:  CLRF   36
+04B1:  MOVF   36,W
+04B2:  SUBLW  0F
+04B3:  BTFSS  03.0
+04B4:  GOTO   4CB
+....................       sync(&DTMF_OSCTUNE[x] ,ee_ptr,0,action); ee_ptr++; // EE locations 120:135 (0x78:0x87) 
+04B5:  MOVLW  20
+04B6:  ADDWF  36,W
+04B7:  MOVWF  3C
+04B8:  MOVLW  01
+04B9:  MOVWF  3D
+04BA:  BTFSC  03.0
+04BB:  INCF   3D,F
+04BC:  MOVF   3D,W
+04BD:  MOVWF  41
+04BE:  MOVF   3C,W
+04BF:  MOVWF  40
+04C0:  MOVF   3B,W
+04C1:  MOVWF  42
+04C2:  CLRF   43
+04C3:  MOVF   35,W
+04C4:  MOVWF  44
+04C5:  BCF    03.6
+04C6:  CALL   2D0
+04C7:  BSF    03.6
+04C8:  INCF   3B,F
+....................     } 
+04C9:  INCF   36,F
+04CA:  GOTO   4B1
+.................... } 
+04CB:  BCF    03.6
+04CC:  RETLW  00
+.................... // }}} 
+.................... // 
+.................... //************************************************************************** 
+.................... // MAIN 
+.................... // Read keypad for tone to generate. 
+.................... // fix x_SWa and x_SWb 
+.................... //************************************************************************** 
+.................... // main loop {{{ 
+.................... void main (void) 
+.................... { 
+*
+0F25:  CLRF   04
+0F26:  BCF    03.7
+0F27:  MOVLW  1F
+0F28:  ANDWF  03,F
+0F29:  MOVLW  71
+0F2A:  BSF    03.5
+0F2B:  MOVWF  0F
+0F2C:  MOVF   0F,W
+0F2D:  BCF    03.5
+0F2E:  BSF    03.6
+0F2F:  BCF    1F.0
+0F30:  BCF    1F.1
+0F31:  BCF    1F.2
+0F32:  BCF    1F.3
+0F33:  BCF    03.6
+0F34:  BCF    1F.6
+0F35:  MOVLW  00
+0F36:  BSF    03.6
+0F37:  MOVWF  1E
+0F38:  CLRF   19
+0F39:  CLRF   1A
+0F3A:  BSF    03.5
+0F3B:  CLRF   1E
+0F3C:  BCF    03.5
+0F3D:  CLRF   1B
+0F3E:  BCF    03.6
+0F3F:  BCF    0D.5
+....................   if ( read_eeprom(0) == 0x0FF ) { 
+*
+0F47:  BCF    03.5
+0F48:  BSF    03.6
+0F49:  CLRF   0D
+0F4A:  BSF    03.5
+0F4B:  BCF    0C.7
+0F4C:  BSF    0C.0
+0F4D:  BCF    03.5
+0F4E:  MOVF   0C,W
+0F4F:  SUBLW  FF
+0F50:  BTFSS  03.2
+0F51:  GOTO   75A
+.................... 	  sync_data(SYNC_DEFAULT); 
+0F52:  MOVLW  02
+0F53:  MOVWF  35
+0F54:  BCF    0A.3
+0F55:  BCF    03.6
+0F56:  CALL   337
+0F57:  BSF    0A.3
+.................... 	} else { 
+0F58:  GOTO   75F
+0F59:  BSF    03.6
+.................... 		sync_data(SYNC_RAM); 
+0F5A:  CLRF   35
+0F5B:  BCF    0A.3
+0F5C:  BCF    03.6
+0F5D:  CALL   337
+0F5E:  BSF    0A.3
+.................... 	} 
+....................   enable_interrupts(GLOBAL); 
+0F5F:  MOVLW  C0
+0F60:  IORWF  0B,F
+....................   enable_interrupts(INT_RA4); 
+0F61:  BSF    0B.3
+0F62:  BSF    03.5
+0F63:  BSF    16.4
+....................   OSCTUNE=0x00; 
+0F64:  CLRF   10
+....................   clearDTMFArray(); 
+0F65:  BCF    0A.3
+0F66:  BCF    03.5
+0F67:  CALL   4CD
+0F68:  BSF    0A.3
+....................   init(); 
+0F69:  BCF    0A.3
+0F6A:  GOTO   4E6
+0F6B:  BSF    0A.3
+....................   init_pins(); 
+0F6C:  BCF    0A.3
+0F6D:  GOTO   5A1
+0F6E:  BSF    0A.3
+....................  
+....................   // The calibrateDigit function updates the DTMF_OSCTUNE array which is handled by the RegPtrArray. 
+....................   // The calibrated values can be stored in EEPROM. 
+....................   //sync_data(SYNC_EEPROM); 
+....................    
+....................   while(1) { 
+....................     if (COR_FLAG) { 
+0F6F:  BTFSS  5C.1
+0F70:  GOTO   77F
+....................       ActivateRXRelays((int)COR_IN); 
+0F71:  MOVF   6E,W
+0F72:  BSF    03.6
+0F73:  MOVWF  43
+0F74:  BCF    0A.3
+0F75:  BCF    03.6
+0F76:  CALL   50B
+0F77:  BSF    0A.3
+....................       //ProcessCorFlag(); 
+....................       COR_FLAG = 0; 
+0F78:  BCF    5C.1
+....................       // Clear DTMF array if COR_IN is empty 
+....................       if ( ! (int)COR_IN ) { 
+0F79:  MOVF   6E,F
+0F7A:  BTFSS  03.2
+0F7B:  GOTO   77F
+....................         clearDTMFArray(); 
+0F7C:  BCF    0A.3
+0F7D:  CALL   4CD
+0F7E:  BSF    0A.3
+....................       } 
+....................     } 
+....................     if (UpdatePTT) { 
+0F7F:  BTFSS  5C.0
+0F80:  GOTO   789
+....................       update_PTT(0,PTT_NORMAL); 
+0F81:  BSF    03.6
+0F82:  CLRF   40
+0F83:  CLRF   41
+0F84:  BCF    0A.3
+0F85:  BCF    03.6
+0F86:  CALL   5B8
+0F87:  BSF    0A.3
+....................       UpdatePTT=0; 
+0F88:  BCF    5C.0
+....................     } 
+....................     // The DTMF variable is set by the interrupt 
+....................     if ( DTMF.Strobe ) { 
+0F89:  BTFSS  61.4
+0F8A:  GOTO   7C4
+....................       // Collect DTMFs inside aDTMF 
+....................       if(pDTMF <= &aDTMF[DTMFArraySize-1]) { 
+0F8B:  MOVF   6D,F
+0F8C:  BTFSS  03.2
+0F8D:  GOTO   7A8
+0F8E:  MOVF   6C,W
+0F8F:  SUBLW  6B
+0F90:  BTFSS  03.0
+0F91:  GOTO   7A8
+....................         // pDTMF is the array pointer for the next available DTMF index 
+....................         pDTMF->Key = DTMF.Key; 
+0F92:  MOVF   6C,W
+0F93:  MOVWF  04
+0F94:  BCF    03.7
+0F95:  BTFSC  6D.0
+0F96:  BSF    03.7
+0F97:  MOVF   61,W
+0F98:  ANDLW  0F
+0F99:  ANDLW  0F
+0F9A:  MOVWF  20
+0F9B:  MOVLW  F0
+0F9C:  ANDWF  00,W
+0F9D:  IORWF  20,W
+0F9E:  MOVWF  00
+....................         pDTMF->Strobe = 1; 
+0F9F:  MOVF   6C,W
+0FA0:  MOVWF  04
+0FA1:  BCF    03.7
+0FA2:  BTFSC  6D.0
+0FA3:  BSF    03.7
+0FA4:  BSF    00.4
+....................         pDTMF++; 
+0FA5:  INCF   6C,F
+0FA6:  BTFSC  03.2
+0FA7:  INCF   6D,F
+.................... 	  	} 
+....................       DTMF.Strobe=0; 
+0FA8:  BCF    61.4
+....................       if ( PgmMode ) { 
+0FA9:  MOVF   5E,F
+0FAA:  BTFSC  03.2
+0FAB:  GOTO   7BB
+....................         if ( DTMF.Key == ds ) { // "*" has been pressed 
+0FAC:  MOVF   61,W
+0FAD:  ANDLW  0F
+0FAE:  SUBLW  0B
+0FAF:  BTFSS  03.2
+0FB0:  GOTO   7B4
+....................           clearDTMFArray(); 
+0FB1:  BCF    0A.3
+0FB2:  CALL   4CD
+0FB3:  BSF    0A.3
+....................         } 
+....................         // PGM mode requires 5 digits 
+....................         // <OP><REG1><REG0><VAL1><VAL0>#  
+....................         if ( DTMF.Key == dp ) { 
+0FB4:  MOVF   61,W
+0FB5:  ANDLW  0F
+0FB6:  SUBLW  0C
+0FB7:  BTFSS  03.2
+0FB8:  GOTO   7BA
+....................           RunPgmMode(); 
+0FB9:  GOTO   000
+....................         } 
+....................       } else { 
+0FBA:  GOTO   7BC
+....................         ProcessDTMF(); // Check for functions, even if "*" is pressed 
+0FBB:  GOTO   3EA
+.................... 	 		} 
+....................       if ( DTMF.Key == ds ) { // "*" has been pressed. 
+0FBC:  MOVF   61,W
+0FBD:  ANDLW  0F
+0FBE:  SUBLW  0B
+0FBF:  BTFSS  03.2
+0FC0:  GOTO   7C4
+....................         clearDTMFArray(); 
+0FC1:  BCF    0A.3
+0FC2:  CALL   4CD
+0FC3:  BSF    0A.3
+....................       } 
+....................     } 
+....................     if ( PTTTimeOutFlag ) { // Generated once per minute by RTC 
+0FC4:  BTFSS  5C.2
+0FC5:  GOTO   7E8
+....................       PTTTimeOutFlag=0; 
+0FC6:  BCF    5C.2
+....................       if ( COR_IN.RX2 ) {   
+0FC7:  BTFSS  6E.2
+0FC8:  GOTO   7D3
+....................         DoTimeOut(PTT2TimeOut); 
+0FC9:  BSF    03.5
+0FCA:  MOVF   61,W
+0FCB:  BCF    03.5
+0FCC:  BSF    03.6
+0FCD:  MOVWF  30
+0FCE:  BCF    0A.3
+0FCF:  BCF    03.6
+0FD0:  CALL   74B
+0FD1:  BSF    0A.3
+....................       } else if ( COR_IN.RX1 ) {   
+0FD2:  GOTO   7E8
+0FD3:  BTFSS  6E.1
+0FD4:  GOTO   7DF
+....................         DoTimeOut(PTT1TimeOut); 
+0FD5:  BSF    03.5
+0FD6:  MOVF   60,W
+0FD7:  BCF    03.5
+0FD8:  BSF    03.6
+0FD9:  MOVWF  30
+0FDA:  BCF    0A.3
+0FDB:  BCF    03.6
+0FDC:  CALL   74B
+0FDD:  BSF    0A.3
+....................       } else if ( COR_IN.RX0 ) { 
+0FDE:  GOTO   7E8
+0FDF:  BTFSS  6E.0
+0FE0:  GOTO   7E8
+....................         DoTimeOut(PTT0TimeOut); 
+0FE1:  MOVF   7E,W
+0FE2:  BSF    03.6
+0FE3:  MOVWF  30
+0FE4:  BCF    0A.3
+0FE5:  BCF    03.6
+0FE6:  CALL   74B
+0FE7:  BSF    0A.3
+....................       } 
+....................     } 
+....................     if ( CALIBRATE_DTMF_FLAG ) { 
+0FE8:  BTFSS  5C.3
+0FE9:  GOTO   7F9
+.................... 	delay_ms(1250); 
+0FEA:  MOVLW  05
+0FEB:  BSF    03.6
+0FEC:  MOVWF  30
+0FED:  MOVLW  FA
+0FEE:  MOVWF  46
+0FEF:  BCF    0A.3
+0FF0:  BCF    03.6
+0FF1:  CALL   650
+0FF2:  BSF    0A.3
+0FF3:  BSF    03.6
+0FF4:  DECFSZ 30,F
+0FF5:  GOTO   7ED
+.................... 	CalibrateDTMF(); 
+0FF6:  BCF    03.6
+0FF7:  GOTO   606
+.................... 	CALIBRATE_DTMF_FLAG = 0; 
+0FF8:  BCF    5C.3
+....................     } 
+....................   } 
+0FF9:  GOTO   76F
+.................... } 
+.................... // main loop }}} 
+.................... void DoTimeOut(int TOreg) { // {{{ 
+....................   if ( TOreg ) { 
+*
+074B:  BSF    03.6
+074C:  MOVF   30,F
+074D:  BTFSC  03.2
+074E:  GOTO   75C
+*
+0FFA:  SLEEP
+....................     if ( PTTTimeOutTimer ) { 
+*
+074F:  BSF    03.5
+0750:  BCF    03.6
+0751:  MOVF   62,F
+0752:  BTFSC  03.2
+0753:  GOTO   756
+....................       PTTTimeOutTimer--; 
+0754:  DECF   62,F
+....................     } else { 
+0755:  GOTO   75A
+.................... 		  PTT=0; 
+0756:  BCF    03.5
+0757:  CLRF   5B
+....................       UpdatePTT=1; 
+0758:  BSF    5C.0
+0759:  BSF    03.5
+075A:  BCF    03.5
+075B:  BSF    03.6
+....................     } 
+....................   }  
+.................... }// }}} 
+075C:  BCF    03.6
+075D:  RETLW  00
+.................... // PTT function {{{ 
+.................... void update_PTT (int extraPtt,int override) { 
+....................     int1 PttVal; 
+....................     int lPTT; 
+....................     if ( override ) { 
+*
+05B8:  BSF    03.6
+05B9:  MOVF   41,F
+05BA:  BTFSC  03.2
+05BB:  GOTO   5BF
+....................       lPTT = extraPtt; 
+05BC:  MOVF   40,W
+05BD:  MOVWF  43
+....................     } else { 
+05BE:  GOTO   5C4
+....................       lPTT = PTT | extraPtt; 
+05BF:  BCF    03.6
+05C0:  MOVF   5B,W
+05C1:  BSF    03.6
+05C2:  IORWF  40,W
+05C3:  MOVWF  43
+....................     } 
+....................     if ( Enable & 0x01 ) { 
+05C4:  BCF    03.6
+05C5:  BTFSS  5D.0
+05C6:  GOTO   5CF
+....................       PttVal = ((lPTT&0x01)!=0); 
+05C7:  BSF    03.6
+05C8:  BCF    42.0
+05C9:  MOVF   43,W
+05CA:  ANDLW  01
+05CB:  BTFSS  03.2
+05CC:  BSF    42.0
+....................     } else { 
+05CD:  GOTO   5D1
+05CE:  BCF    03.6
+....................       PttVal = 0; 
+05CF:  BSF    03.6
+05D0:  BCF    42.0
+....................     } 
+....................     output_bit(PTT0_PIN,PttVal); 
+05D1:  BTFSC  42.0
+05D2:  GOTO   5D7
+05D3:  BCF    03.6
+05D4:  BCF    07.4
+05D5:  GOTO   5D9
+05D6:  BSF    03.6
+05D7:  BCF    03.6
+05D8:  BSF    07.4
+....................     if ( Enable & 0x02 ) { 
+05D9:  BTFSS  5D.1
+05DA:  GOTO   5E3
+....................       PttVal = ((lPTT&0x02)!=0); 
+05DB:  BSF    03.6
+05DC:  BCF    42.0
+05DD:  MOVF   43,W
+05DE:  ANDLW  02
+05DF:  BTFSS  03.2
+05E0:  BSF    42.0
+....................     } else { 
+05E1:  GOTO   5E5
+05E2:  BCF    03.6
+....................       PttVal = 0; 
+05E3:  BSF    03.6
+05E4:  BCF    42.0
+....................     } 
+....................     output_bit(PTT1_PIN,PttVal); 
+05E5:  BTFSC  42.0
+05E6:  GOTO   5EB
+05E7:  BCF    03.6
+05E8:  BCF    07.5
+05E9:  GOTO   5ED
+05EA:  BSF    03.6
+05EB:  BCF    03.6
+05EC:  BSF    07.5
+....................     if (Enable & 0x04 ) { 
+05ED:  BTFSS  5D.2
+05EE:  GOTO   5F7
+....................       PttVal = ((lPTT&0x04)!=0); 
+05EF:  BSF    03.6
+05F0:  BCF    42.0
+05F1:  MOVF   43,W
+05F2:  ANDLW  04
+05F3:  BTFSS  03.2
+05F4:  BSF    42.0
+....................     } else { 
+05F5:  GOTO   5F9
+05F6:  BCF    03.6
+....................       PttVal = 0; 
+05F7:  BSF    03.6
+05F8:  BCF    42.0
+....................     } 
+....................     output_bit(PTT2_PIN,PttVal); 
+05F9:  BTFSC  42.0
+05FA:  GOTO   5FF
+05FB:  BCF    03.6
+05FC:  BCF    07.6
+05FD:  GOTO   601
+05FE:  BSF    03.6
+05FF:  BCF    03.6
+0600:  BSF    07.6
+.................... } 
+0601:  RETLW  00
+.................... // }}} 
+.................... // clearDTMFArray {{{ 
+.................... void clearDTMFArray(void) { 
+....................   int x; 
+....................   // Don't bother if the array is already clear 
+....................   if ( pDTMF > &aDTMF[0] ) { 
+*
+04CD:  MOVF   6D,F
+04CE:  BTFSS  03.2
+04CF:  GOTO   4D4
+04D0:  MOVF   6C,W
+04D1:  SUBLW  62
+04D2:  BTFSC  03.0
+04D3:  GOTO   4E2
+....................     for(x=0;x<DTMFArraySize-1;x++) { 
+04D4:  BSF    03.6
+04D5:  CLRF   36
+04D6:  MOVF   36,W
+04D7:  SUBLW  08
+04D8:  BTFSS  03.0
+04D9:  GOTO   4E1
+....................       aDTMF[x] = (sDTMF)0; 
+04DA:  MOVLW  62
+04DB:  ADDWF  36,W
+04DC:  MOVWF  04
+04DD:  BCF    03.7
+04DE:  CLRF   00
+....................     } 
+04DF:  INCF   36,F
+04E0:  GOTO   4D6
+04E1:  BCF    03.6
+....................   } 
+....................   pDTMF=&aDTMF[0]; 
+04E2:  CLRF   6D
+04E3:  MOVLW  62
+04E4:  MOVWF  6C
+.................... } 
+04E5:  RETLW  00
+.................... // }}} 
+.................... // sendDTMF {{{ 
+.................... void sendDTMF(int digit) { 
+....................   int iDigit; 
+....................   OSCTUNE = DTMF_OSCTUNE[digit&0x0F]; 
+*
+0706:  BSF    03.6
+0707:  MOVF   41,W
+0708:  ANDLW  0F
+0709:  ADDLW  20
+070A:  MOVWF  04
+070B:  BSF    03.7
+070C:  MOVF   00,W
+070D:  BSF    03.5
+070E:  BCF    03.6
+070F:  MOVWF  10
+....................   iDigit = DTMF_map[digit&0x0F]; 
+0710:  BCF    03.5
+0711:  BSF    03.6
+0712:  MOVF   41,W
+0713:  ANDLW  0F
+0714:  BCF    03.6
+0715:  CALL   0AF
+0716:  MOVWF  21
+0717:  BSF    03.6
+0718:  MOVWF  42
+....................   x_SWa = auc_frequencyL[(iDigit>>2)&0x03]; 
+0719:  RRF    42,W
+071A:  BCF    03.6
+071B:  MOVWF  20
+071C:  RRF    20,F
+071D:  MOVLW  3F
+071E:  ANDWF  20,F
+071F:  MOVF   20,W
+0720:  ANDLW  03
+0721:  CALL   1BA
+0722:  MOVWF  21
+0723:  BSF    03.5
+0724:  MOVWF  63
+....................   x_SWb = auc_frequencyH[iDigit&0x03]; 
+0725:  BCF    03.5
+0726:  BSF    03.6
+0727:  MOVF   42,W
+0728:  ANDLW  03
+0729:  BCF    03.6
+072A:  CALL   1C2
+072B:  MOVWF  21
+072C:  BSF    03.5
+072D:  MOVWF  64
+....................   disable_interrupts(INT_RA4); 
+072E:  BCF    03.5
+072F:  BCF    0B.3
+0730:  BSF    03.5
+0731:  BCF    16.4
+....................   ActivateRXRelays(0); 
+0732:  BCF    03.5
+0733:  BSF    03.6
+0734:  CLRF   43
+0735:  BCF    03.6
+0736:  CALL   50B
+....................   init_pwm(); 
+0737:  CALL   668
+....................   delay_ms(DTMF_LEN); 
+0738:  MOVLW  7D
+0739:  BSF    03.6
+073A:  MOVWF  46
+073B:  BCF    03.6
+073C:  CALL   650
+....................   stop_pwm(); 
+073D:  CALL   67C
+....................   enable_interrupts(INT_RA4); 
+073E:  BSF    0B.3
+073F:  BSF    03.5
+0740:  BSF    16.4
+....................   delay_ms(DTMF_LEN); 
+0741:  MOVLW  7D
+0742:  BCF    03.5
+0743:  BSF    03.6
+0744:  MOVWF  46
+0745:  BCF    03.6
+0746:  CALL   650
+....................   OSCTUNE = 0; // Reset it back to manufacturing settings 
+0747:  BSF    03.5
+0748:  CLRF   10
+.................... } 
+0749:  BCF    03.5
+074A:  RETLW  00
+.................... // sendDTMF }}} 
+.................... // sendDTMFCal {{{ Only used during calibration 
+.................... void sendDTMFCal(int digit,int1 action) { 
+....................   int iDigit; 
+....................   if ( action ) { // start 
+*
+075E:  BSF    03.6
+075F:  MOVF   3D,F
+0760:  BTFSC  03.2
+0761:  GOTO   786
+.................... 		  iDigit = DTMF_map[digit&0x0F]; 
+0762:  MOVF   3C,W
+0763:  ANDLW  0F
+0764:  BCF    03.6
+0765:  CALL   0AF
+0766:  MOVWF  21
+0767:  BSF    03.6
+0768:  MOVWF  3E
+.................... 		  x_SWa = auc_frequencyL[(iDigit>>2)&0x03]; 
+0769:  RRF    3E,W
+076A:  BCF    03.6
+076B:  MOVWF  20
+076C:  RRF    20,F
+076D:  MOVLW  3F
+076E:  ANDWF  20,F
+076F:  MOVF   20,W
+0770:  ANDLW  03
+0771:  CALL   1BA
+0772:  MOVWF  21
+0773:  BSF    03.5
+0774:  MOVWF  63
+.................... 		  x_SWb = auc_frequencyH[iDigit&0x03]; 
+0775:  BCF    03.5
+0776:  BSF    03.6
+0777:  MOVF   3E,W
+0778:  ANDLW  03
+0779:  BCF    03.6
+077A:  CALL   1C2
+077B:  MOVWF  21
+077C:  BSF    03.5
+077D:  MOVWF  64
+.................... 		  disable_interrupts(INT_RA4); 
+077E:  BCF    03.5
+077F:  BCF    0B.3
+0780:  BSF    03.5
+0781:  BCF    16.4
+.................... 		  init_pwm(); 
+0782:  BCF    03.5
+0783:  CALL   668
+....................   } else { // stop 
+0784:  GOTO   78C
+0785:  BSF    03.6
+.................... 		  stop_pwm(); 
+0786:  BCF    03.6
+0787:  CALL   67C
+.................... 		  enable_interrupts(INT_RA4); 
+0788:  BSF    0B.3
+0789:  BSF    03.5
+078A:  BSF    16.4
+078B:  BCF    03.5
+....................   } 
+.................... } 
+078C:  RETLW  00
+.................... // sendDTMF }}} 
+.................... // ProcessDTMF {{{ 
+.................... int ProcessDTMF(void) { 
+....................   int fn,d; 
+....................   //sDTMF cDTMF; 
+....................   int1 DigitMatch,StrobeMatch; 
+....................   //int1 FunctionLast; 
+....................   int program; 
+....................   int1 FunctionMatch; 
+....................   int FKey,UKey; 
+....................   int1 FStrobe,UStrobe,FLast; 
+....................    
+....................   for (fn=0;fn<FUNCTION_NUM+1;fn++) { 
+*
+0BEA:  BSF    03.6
+0BEB:  CLRF   30
+0BEC:  MOVF   30,W
+0BED:  SUBLW  08
+0BEE:  BTFSS  03.0
+0BEF:  GOTO   601
+....................     FunctionMatch=1; 
+0BF0:  BSF    32.2
+....................     d=0; 
+0BF1:  CLRF   31
+....................     while(d<4 && FunctionMatch) { 
+0BF2:  MOVF   31,W
+0BF3:  SUBLW  03
+0BF4:  BTFSS  03.0
+0BF5:  GOTO   5FF
+0BF6:  BTFSS  32.2
+0BF7:  GOTO   5FF
+....................     	FKey = Function[fn].Digit[d].Key; 
+0BF8:  MOVF   30,W
+0BF9:  MOVWF  3C
+0BFA:  MOVLW  05
+0BFB:  MOVWF  3D
+0BFC:  BCF    0A.3
+0BFD:  BCF    03.6
+0BFE:  CALL   283
+0BFF:  BSF    0A.3
+0C00:  BSF    03.6
+0C01:  MOVF   31,W
+0C02:  BCF    03.6
+0C03:  ADDWF  21,W
+0C04:  ADDLW  2E
+0C05:  MOVWF  04
+0C06:  BCF    03.7
+0C07:  MOVF   00,W
+0C08:  ANDLW  0F
+0C09:  BSF    03.6
+0C0A:  MOVWF  34
+....................       UKey = aDTMF[d].Key; 
+0C0B:  MOVLW  62
+0C0C:  ADDWF  31,W
+0C0D:  MOVWF  04
+0C0E:  BCF    03.7
+0C0F:  MOVF   00,W
+0C10:  ANDLW  0F
+0C11:  MOVWF  35
+....................       FStrobe = Function[fn].Digit[d].Strobe; 
+0C12:  BCF    32.3
+0C13:  MOVF   30,W
+0C14:  MOVWF  3C
+0C15:  MOVLW  05
+0C16:  MOVWF  3D
+0C17:  BCF    0A.3
+0C18:  BCF    03.6
+0C19:  CALL   283
+0C1A:  BSF    0A.3
+0C1B:  BSF    03.6
+0C1C:  MOVF   31,W
+0C1D:  BCF    03.6
+0C1E:  ADDWF  21,W
+0C1F:  ADDLW  2E
+0C20:  MOVWF  04
+0C21:  BCF    03.7
+0C22:  BTFSS  00.4
+0C23:  GOTO   427
+0C24:  BSF    03.6
+0C25:  BSF    32.3
+0C26:  BCF    03.6
+....................       UStrobe = aDTMF[d].Strobe; 
+0C27:  BSF    03.6
+0C28:  BCF    32.4
+0C29:  MOVLW  62
+0C2A:  ADDWF  31,W
+0C2B:  MOVWF  04
+0C2C:  BCF    03.7
+0C2D:  BTFSC  00.4
+0C2E:  BSF    32.4
+....................       FLast = Function[fn].Digit[d].LastKey; 
+0C2F:  BCF    32.5
+0C30:  MOVF   30,W
+0C31:  MOVWF  3C
+0C32:  MOVLW  05
+0C33:  MOVWF  3D
+0C34:  BCF    0A.3
+0C35:  BCF    03.6
+0C36:  CALL   283
+0C37:  BSF    0A.3
+0C38:  BSF    03.6
+0C39:  MOVF   31,W
+0C3A:  BCF    03.6
+0C3B:  ADDWF  21,W
+0C3C:  ADDLW  2E
+0C3D:  MOVWF  04
+0C3E:  BCF    03.7
+0C3F:  BTFSS  00.5
+0C40:  GOTO   444
+0C41:  BSF    03.6
+0C42:  BSF    32.5
+0C43:  BCF    03.6
+....................       DigitMatch = (UKey == FKey); 
+0C44:  BSF    03.6
+0C45:  BCF    32.0
+0C46:  MOVF   34,W
+0C47:  SUBWF  35,W
+0C48:  BTFSC  03.2
+0C49:  BSF    32.0
+....................       StrobeMatch = (UStrobe == FStrobe); 
+0C4A:  BCF    32.1
+0C4B:  BCF    03.6
+0C4C:  CLRF   20
+0C4D:  BSF    03.6
+0C4E:  BTFSS  32.3
+0C4F:  GOTO   453
+0C50:  BCF    03.6
+0C51:  BSF    20.4
+0C52:  BSF    03.6
+0C53:  MOVF   32,W
+0C54:  BCF    03.6
+0C55:  XORWF  20,W
+0C56:  ANDLW  10
+0C57:  BTFSS  03.2
+0C58:  GOTO   45C
+0C59:  BSF    03.6
+0C5A:  BSF    32.1
+0C5B:  BCF    03.6
+....................       if ( !DigitMatch ) { 
+0C5C:  BSF    03.6
+0C5D:  BTFSC  32.0
+0C5E:  GOTO   460
+....................       	FunctionMatch=0; 
+0C5F:  BCF    32.2
+....................       } 
+.................... 			if ( FunctionMatch && StrobeMatch && FLast) { 
+0C60:  BTFSS  32.2
+0C61:  GOTO   5FD
+0C62:  BTFSS  32.1
+0C63:  GOTO   5FD
+0C64:  BTFSS  32.5
+0C65:  GOTO   5FD
+.................... 		  	program=Function[fn].PgmPtr; 
+0C66:  MOVF   30,W
+0C67:  MOVWF  3C
+0C68:  MOVLW  05
+0C69:  MOVWF  3D
+0C6A:  BCF    0A.3
+0C6B:  BCF    03.6
+0C6C:  CALL   283
+0C6D:  BSF    0A.3
+0C6E:  MOVLW  04
+0C6F:  ADDWF  21,W
+0C70:  ADDLW  2E
+0C71:  MOVWF  04
+0C72:  BCF    03.7
+0C73:  MOVF   00,W
+0C74:  BSF    03.6
+0C75:  MOVWF  33
+....................   			switch(program) { 
+0C76:  MOVF   33,W
+0C77:  XORLW  08
+0C78:  BCF    03.6
+0C79:  BTFSS  03.2
+0C7A:  GOTO   4A7
+....................   			case PGM_MODE: 
+....................   				PgmMode = 1; 
+0C7B:  MOVLW  01
+0C7C:  MOVWF  5E
+....................   				update_PTT(PWM_PTT,PTT_OVERRIDE); 
+0C7D:  MOVF   76,W
+0C7E:  BSF    03.6
+0C7F:  MOVWF  40
+0C80:  MOVLW  01
+0C81:  MOVWF  41
+0C82:  BCF    0A.3
+0C83:  BCF    03.6
+0C84:  CALL   5B8
+0C85:  BSF    0A.3
+.................... 				delay_ms(750); 
+0C86:  MOVLW  03
+0C87:  BSF    03.6
+0C88:  MOVWF  36
+0C89:  MOVLW  FA
+0C8A:  MOVWF  46
+0C8B:  BCF    0A.3
+0C8C:  BCF    03.6
+0C8D:  CALL   650
+0C8E:  BSF    0A.3
+0C8F:  BSF    03.6
+0C90:  DECFSZ 36,F
+0C91:  GOTO   489
+....................   				morse(MCHAR('p')); 
+0C92:  MOVLW  19
+0C93:  MOVWF  40
+0C94:  BCF    0A.3
+0C95:  BCF    03.6
+0C96:  CALL   6CC
+0C97:  BSF    0A.3
+.................... 	  			update_PTT(0,PTT_NORMAL); 
+0C98:  BSF    03.6
+0C99:  CLRF   40
+0C9A:  CLRF   41
+0C9B:  BCF    0A.3
+0C9C:  BCF    03.6
+0C9D:  CALL   5B8
+0C9E:  BSF    0A.3
+.................... 				delay_ms(250); 
+0C9F:  MOVLW  FA
+0CA0:  BSF    03.6
+0CA1:  MOVWF  46
+0CA2:  BCF    0A.3
+0CA3:  BCF    03.6
+0CA4:  CALL   650
+0CA5:  BSF    0A.3
+....................   				break; 
+0CA6:  GOTO   5F9
+....................   			default: 
+....................   				delay_ms(INIT_PAUSE); 
+0CA7:  MOVLW  06
+0CA8:  BSF    03.6
+0CA9:  MOVWF  36
+0CAA:  MOVLW  FA
+0CAB:  MOVWF  46
+0CAC:  BCF    0A.3
+0CAD:  BCF    03.6
+0CAE:  CALL   650
+0CAF:  BSF    0A.3
+0CB0:  BSF    03.6
+0CB1:  DECFSZ 36,F
+0CB2:  GOTO   4AA
+....................   				ExecutePgm(program); 
+0CB3:  MOVF   33,W
+0CB4:  MOVWF  36
+....................   				break; 
+*
+0DF8:  GOTO   5F9
+....................   			} 
+....................   	 		clearDTMFArray(); // Controller can start accept commands immediately 
+0DF9:  BCF    0A.3
+0DFA:  CALL   4CD
+0DFB:  BSF    0A.3
+0DFC:  BSF    03.6
+....................   		} 
+....................   			d++; 
+0DFD:  INCF   31,F
+....................   	} 
+0DFE:  GOTO   3F2
+.................... 	} 
+0DFF:  INCF   30,F
+0E00:  GOTO   3EC
+....................   // Fix this function. It does nothing right now 
+....................   return 0; 
+0E01:  MOVLW  00
+0E02:  BCF    03.6
+0E03:  MOVWF  21
+.................... } 
+0E04:  BSF    0A.3
+0E05:  GOTO   7BC (RETURN)
+.................... // }}} 
+.................... // ExecutePgm {{{ 
+.................... void ExecutePgm(int pgm) { 
+....................   int i; 
+....................   int Op; 
+....................   int Arg; 
+....................   int PgmCount; 
+....................  
+....................   ExecPgm.PgmPtr=pgm&0x07; 
+*
+0CB5:  MOVF   36,W
+0CB6:  ANDLW  07
+0CB7:  ANDLW  0F
+0CB8:  BCF    03.6
+0CB9:  MOVWF  20
+0CBA:  MOVLW  F0
+0CBB:  ANDWF  5F,W
+0CBC:  IORWF  20,W
+0CBD:  MOVWF  5F
+....................   ExecPgm.RunPgm=1; 
+0CBE:  BSF    5F.4
+....................   NextPgm = 0; 
+0CBF:  CLRF   60
+....................   PgmCount = 0; 
+0CC0:  BSF    03.6
+0CC1:  CLRF   3A
+....................  
+....................   while(ExecPgm.RunPgm) {   
+0CC2:  BCF    03.6
+0CC3:  BTFSS  5F.4
+0CC4:  GOTO   5F8
+....................     i=0; 
+0CC5:  BSF    03.6
+0CC6:  CLRF   37
+....................     NextPgm = 0; 
+0CC7:  BCF    03.6
+0CC8:  CLRF   60
+....................     while(i<8 && ExecPgm.RunPgm) { 
+0CC9:  BSF    03.6
+0CCA:  MOVF   37,W
+0CCB:  SUBLW  07
+0CCC:  BTFSS  03.0
+0CCD:  GOTO   5E9
+0CCE:  BCF    03.6
+0CCF:  BTFSC  5F.4
+0CD0:  GOTO   4D3
+0CD1:  BSF    03.6
+0CD2:  GOTO   5E9
+....................       Op = Program[ExecPgm.PgmPtr].Instruction[i].Op; 
+0CD3:  MOVF   5F,W
+0CD4:  ANDLW  0F
+0CD5:  MOVWF  20
+0CD6:  RLF    20,F
+0CD7:  RLF    20,F
+0CD8:  RLF    20,F
+0CD9:  MOVLW  F8
+0CDA:  ANDWF  20,F
+0CDB:  MOVF   20,W
+0CDC:  BSF    03.6
+0CDD:  ADDWF  37,W
+0CDE:  ADDLW  A0
+0CDF:  MOVWF  04
+0CE0:  BCF    03.7
+0CE1:  MOVF   00,W
+0CE2:  BCF    03.6
+0CE3:  MOVWF  20
+0CE4:  SWAPF  20,W
+0CE5:  ANDLW  0F
+0CE6:  BSF    03.6
+0CE7:  MOVWF  38
+....................       if(Op & (MORSE>>4)) { 
+0CE8:  BTFSS  38.3
+0CE9:  GOTO   4FF
+....................         // Morse character; only keep 6 bits 
+....................         Op = MORSE>>4; // Sanitize the operator for ExecOp function 
+0CEA:  MOVLW  08
+0CEB:  MOVWF  38
+....................         Arg = (int)Program[ExecPgm.PgmPtr].Instruction[i] & 0x3F; 
+0CEC:  BCF    03.6
+0CED:  MOVF   5F,W
+0CEE:  ANDLW  0F
+0CEF:  MOVWF  20
+0CF0:  RLF    20,F
+0CF1:  RLF    20,F
+0CF2:  RLF    20,F
+0CF3:  MOVLW  F8
+0CF4:  ANDWF  20,F
+0CF5:  MOVF   20,W
+0CF6:  BSF    03.6
+0CF7:  ADDWF  37,W
+0CF8:  ADDLW  A0
+0CF9:  MOVWF  04
+0CFA:  BCF    03.7
+0CFB:  MOVF   00,W
+0CFC:  ANDLW  3F
+0CFD:  MOVWF  39
+....................       } else { 
+0CFE:  GOTO   511
+....................         Arg = Program[ExecPgm.PgmPtr].Instruction[i].Arg; 
+0CFF:  BCF    03.6
+0D00:  MOVF   5F,W
+0D01:  ANDLW  0F
+0D02:  MOVWF  20
+0D03:  RLF    20,F
+0D04:  RLF    20,F
+0D05:  RLF    20,F
+0D06:  MOVLW  F8
+0D07:  ANDWF  20,F
+0D08:  MOVF   20,W
+0D09:  BSF    03.6
+0D0A:  ADDWF  37,W
+0D0B:  ADDLW  A0
+0D0C:  MOVWF  04
+0D0D:  BCF    03.7
+0D0E:  MOVF   00,W
+0D0F:  ANDLW  0F
+0D10:  MOVWF  39
+....................       } 
+....................       ExecOp(Op,Arg);   
+0D11:  MOVF   38,W
+0D12:  MOVWF  3B
+0D13:  MOVF   39,W
+0D14:  MOVWF  3C
+....................       i++; 
+*
+0DE6:  BSF    03.6
+0DE7:  INCF   37,F
+....................     } 
+0DE8:  GOTO   4CA
+....................     PgmCount++; 
+0DE9:  INCF   3A,F
+....................     if ( NextPgm.RunPgm && (PgmCount < 4 )) { 
+0DEA:  BCF    03.6
+0DEB:  BTFSS  60.4
+0DEC:  GOTO   5F7
+0DED:  BSF    03.6
+0DEE:  MOVF   3A,W
+0DEF:  SUBLW  03
+0DF0:  BTFSC  03.0
+0DF1:  GOTO   5F4
+0DF2:  BCF    03.6
+0DF3:  GOTO   5F7
+....................         ExecPgm = NextPgm; 
+0DF4:  BCF    03.6
+0DF5:  MOVF   60,W
+0DF6:  MOVWF  5F
+....................     } 
+....................   } 
+0DF7:  GOTO   4C3
+.................... } 
+.................... // }}} 
+.................... // ExecOp {{{ 
+.................... void ExecOp(int op,int arg) { 
+....................     int larg; 
+....................     int p; 
+....................     int lop; 
+....................  
+....................     lop=(op&0x0F)<<4; 
+*
+0D15:  MOVF   3B,W
+0D16:  ANDLW  0F
+0D17:  BCF    03.6
+0D18:  MOVWF  20
+0D19:  SWAPF  20,W
+0D1A:  BSF    03.6
+0D1B:  MOVWF  3F
+0D1C:  MOVLW  F0
+0D1D:  ANDWF  3F,F
+....................  
+....................   larg=arg&0x07; 
+0D1E:  MOVF   3C,W
+0D1F:  ANDLW  07
+0D20:  MOVWF  3D
+....................   switch(lop) { 
+0D21:  MOVF   3F,W
+0D22:  BCF    03.6
+0D23:  BTFSC  03.2
+0D24:  GOTO   53E
+0D25:  XORLW  10
+0D26:  BTFSC  03.2
+0D27:  GOTO   543
+0D28:  XORLW  90
+0D29:  BTFSC  03.2
+0D2A:  GOTO   568
+0D2B:  XORLW  B0
+0D2C:  BTFSC  03.2
+0D2D:  GOTO   57F
+0D2E:  XORLW  10
+0D2F:  BTFSC  03.2
+0D30:  GOTO   5A3
+0D31:  XORLW  60
+0D32:  BTFSC  03.2
+0D33:  GOTO   5AF
+0D34:  XORLW  10
+0D35:  BTFSC  03.2
+0D36:  GOTO   5B4
+0D37:  XORLW  30
+0D38:  BTFSC  03.2
+0D39:  GOTO   5D7
+0D3A:  XORLW  10
+0D3B:  BTFSC  03.2
+0D3C:  GOTO   5E3
+0D3D:  GOTO   5E6
+....................     case DONE:  
+....................       ExecPgm.PgmPtr=0;  
+0D3E:  MOVLW  F0
+0D3F:  ANDWF  5F,W
+0D40:  MOVWF  5F
+....................       ExecPgm.RunPgm=0;  
+0D41:  BCF    5F.4
+....................     break; 
+0D42:  GOTO   5E6
+....................     case SEND_DTMF:  
+....................       //sendDTMF(DTMF_map[arg&0x0F]);  
+....................             // Activate PTT to selected radios in case COR falls and drops all PTTs 
+....................             // after DTMF starts to send. 
+....................       update_PTT(PWM_PTT,PTT_OVERRIDE); 
+0D43:  MOVF   76,W
+0D44:  BSF    03.6
+0D45:  MOVWF  40
+0D46:  MOVLW  01
+0D47:  MOVWF  41
+0D48:  BCF    0A.3
+0D49:  BCF    03.6
+0D4A:  CALL   5B8
+0D4B:  BSF    0A.3
+....................       delay_ms(750); 
+0D4C:  MOVLW  03
+0D4D:  BSF    03.6
+0D4E:  MOVWF  40
+0D4F:  MOVLW  FA
+0D50:  MOVWF  46
+0D51:  BCF    0A.3
+0D52:  BCF    03.6
+0D53:  CALL   650
+0D54:  BSF    0A.3
+0D55:  BSF    03.6
+0D56:  DECFSZ 40,F
+0D57:  GOTO   54F
+....................     sendDTMF(arg & 0x0F);  
+0D58:  MOVF   3C,W
+0D59:  ANDLW  0F
+0D5A:  MOVWF  40
+0D5B:  MOVWF  41
+0D5C:  BCF    0A.3
+0D5D:  BCF    03.6
+0D5E:  CALL   706
+0D5F:  BSF    0A.3
+....................       delay_ms(250); 
+0D60:  MOVLW  FA
+0D61:  BSF    03.6
+0D62:  MOVWF  46
+0D63:  BCF    0A.3
+0D64:  BCF    03.6
+0D65:  CALL   650
+0D66:  BSF    0A.3
+.................... //            update_PTT(0,PTT_NORMAL); 
+....................     break; 
+0D67:  GOTO   5E6
+....................     case MORSE:  
+....................             // Activate PTT to selected radios in case COR falls and drops all PTTs 
+....................             // after DTMF starts to send. 
+....................       update_PTT(PWM_PTT,PTT_OVERRIDE); 
+0D68:  MOVF   76,W
+0D69:  BSF    03.6
+0D6A:  MOVWF  40
+0D6B:  MOVLW  01
+0D6C:  MOVWF  41
+0D6D:  BCF    0A.3
+0D6E:  BCF    03.6
+0D6F:  CALL   5B8
+0D70:  BSF    0A.3
+....................       if ( arg <= 36 ) { 
+0D71:  BSF    03.6
+0D72:  MOVF   3C,W
+0D73:  SUBLW  24
+0D74:  BTFSS  03.0
+0D75:  GOTO   57D
+....................         morse(arg); 
+0D76:  MOVF   3C,W
+0D77:  MOVWF  40
+0D78:  BCF    0A.3
+0D79:  BCF    03.6
+0D7A:  CALL   6CC
+0D7B:  BSF    0A.3
+0D7C:  BSF    03.6
+....................       } 
+.................... //            update_PTT(0,PTT_NORMAL); 
+....................     break; 
+0D7D:  BCF    03.6
+0D7E:  GOTO   5E6
+....................     case PAUSE:  
+.................... // Max pause value is 7. 
+.................... // Add +8 if you want to reset the PTT to normal settings during the pause. 
+....................       if ( arg & 0x08 ) { 
+0D7F:  BSF    03.6
+0D80:  BTFSS  3C.3
+0D81:  GOTO   589
+....................         update_PTT(0,PTT_NORMAL); 
+0D82:  CLRF   40
+0D83:  CLRF   41
+0D84:  BCF    0A.3
+0D85:  BCF    03.6
+0D86:  CALL   5B8
+0D87:  BSF    0A.3
+0D88:  BSF    03.6
+....................       } 
+....................       larg=(arg&0x07)<<2; // arg in seconds 
+0D89:  MOVF   3C,W
+0D8A:  ANDLW  07
+0D8B:  BCF    03.6
+0D8C:  MOVWF  20
+0D8D:  RLF    20,W
+0D8E:  BSF    03.6
+0D8F:  MOVWF  3D
+0D90:  RLF    3D,F
+0D91:  MOVLW  FC
+0D92:  ANDWF  3D,F
+....................       for(p=0;p<larg;p++) { 
+0D93:  CLRF   3E
+0D94:  MOVF   3D,W
+0D95:  SUBWF  3E,W
+0D96:  BTFSC  03.0
+0D97:  GOTO   5A1
+....................         delay_ms(250);  
+0D98:  MOVLW  FA
+0D99:  MOVWF  46
+0D9A:  BCF    0A.3
+0D9B:  BCF    03.6
+0D9C:  CALL   650
+0D9D:  BSF    0A.3
+....................       } 
+0D9E:  BSF    03.6
+0D9F:  INCF   3E,F
+0DA0:  GOTO   594
+....................     break; 
+0DA1:  BCF    03.6
+0DA2:  GOTO   5E6
+....................     case UPDATE_PWM_PTT:  
+....................       PWM_PTT=larg;  
+0DA3:  BSF    03.6
+0DA4:  MOVF   3D,W
+0DA5:  MOVWF  76
+....................       update_PTT(PWM_PTT,PTT_OVERRIDE); 
+0DA6:  MOVF   76,W
+0DA7:  MOVWF  40
+0DA8:  MOVLW  01
+0DA9:  MOVWF  41
+0DAA:  BCF    0A.3
+0DAB:  BCF    03.6
+0DAC:  CALL   5B8
+0DAD:  BSF    0A.3
+....................     break; 
+0DAE:  GOTO   5E6
+....................     case UPDATE_ENABLE:  
+....................       Enable=larg;  
+0DAF:  BSF    03.6
+0DB0:  MOVF   3D,W
+0DB1:  BCF    03.6
+0DB2:  MOVWF  5D
+....................     break; 
+0DB3:  GOTO   5E6
+....................     case BEEP:  
+....................             // Activate PTT to selected radios in case COR falls and drops all PTTs 
+....................             // after DTMF starts to send. 
+....................             update_PTT(PWM_PTT,PTT_OVERRIDE); 
+0DB4:  MOVF   76,W
+0DB5:  BSF    03.6
+0DB6:  MOVWF  40
+0DB7:  MOVLW  01
+0DB8:  MOVWF  41
+0DB9:  BCF    0A.3
+0DBA:  BCF    03.6
+0DBB:  CALL   5B8
+0DBC:  BSF    0A.3
+....................             delay_ms(750); 
+0DBD:  MOVLW  03
+0DBE:  BSF    03.6
+0DBF:  MOVWF  40
+0DC0:  MOVLW  FA
+0DC1:  MOVWF  46
+0DC2:  BCF    0A.3
+0DC3:  BCF    03.6
+0DC4:  CALL   650
+0DC5:  BSF    0A.3
+0DC6:  BSF    03.6
+0DC7:  DECFSZ 40,F
+0DC8:  GOTO   5C0
+....................       		sendDTMF(larg);  
+0DC9:  MOVF   3D,W
+0DCA:  MOVWF  41
+0DCB:  BCF    0A.3
+0DCC:  BCF    03.6
+0DCD:  CALL   706
+0DCE:  BSF    0A.3
+....................             delay_ms(250); 
+0DCF:  MOVLW  FA
+0DD0:  BSF    03.6
+0DD1:  MOVWF  46
+0DD2:  BCF    0A.3
+0DD3:  BCF    03.6
+0DD4:  CALL   650
+0DD5:  BSF    0A.3
+.................... //            update_PTT(0,PTT_NORMAL); 
+....................     break; // Just send a tone 
+0DD6:  GOTO   5E6
+....................     case JUMP:  
+....................       ExecPgm.RunPgm = 0; // Stop the current program 
+0DD7:  BCF    5F.4
+....................       NextPgm.PgmPtr = larg;  
+0DD8:  BSF    03.6
+0DD9:  MOVF   3D,W
+0DDA:  ANDLW  0F
+0DDB:  BCF    03.6
+0DDC:  MOVWF  20
+0DDD:  MOVLW  F0
+0DDE:  ANDWF  60,W
+0DDF:  IORWF  20,W
+0DE0:  MOVWF  60
+....................       NextPgm.RunPgm = 1;  
+0DE1:  BSF    60.4
+....................     break; 
+0DE2:  GOTO   5E6
+....................     case PGM:  
+....................       PgmMode = 1;  
+0DE3:  MOVLW  01
+0DE4:  MOVWF  5E
+....................     break; 
+0DE5:  GOTO   5E6
+....................   } 
+.................... } 
+.................... // }}} 
+.................... // RunPgmMode() {{{ 
+.................... //        [*] 'A' <OP><REG1><REG0><VAL1><VAL0>#  
+.................... // OP : 
+.................... // 0 --> Exit 
+.................... // 1 --> ProgramFunction 
+.................... // 2 --> ProgramInstruction 
+.................... // 3 --> SyncData 
+.................... // 4 --> ProgramReg 
+.................... // 5 --> EchoRegister 
+.................... // 6 --> CalibrateDTMF 
+.................... // 
+.................... void RunPgmMode(void) { 
+....................   int PgmFunction; 
+....................   int1 Strobe; 
+....................   int1 PgmModePrefix; 
+....................   int ErrorCode; 
+....................    
+....................   PgmFunction=aDTMF[PGM_OP].Key; 
+*
+0800:  MOVF   63,W
+0801:  ANDLW  0F
+0802:  BSF    03.6
+0803:  MOVWF  30
+....................   Strobe=aDTMF[PGM_OP].Strobe; 
+0804:  BCF    31.0
+0805:  BCF    03.6
+0806:  BTFSS  63.4
+0807:  GOTO   00B
+0808:  BSF    03.6
+0809:  BSF    31.0
+080A:  BCF    03.6
+....................   PgmModePrefix = (aDTMF[0].Key == da); 
+080B:  BSF    03.6
+080C:  BCF    31.1
+080D:  BCF    03.6
+080E:  MOVF   62,W
+080F:  ANDLW  0F
+0810:  SUBLW  0D
+0811:  BTFSS  03.2
+0812:  GOTO   016
+0813:  BSF    03.6
+0814:  BSF    31.1
+0815:  BCF    03.6
+....................   ErrorCode = 0; 
+0816:  BSF    03.6
+0817:  CLRF   32
+....................   if ( Strobe && PgmModePrefix ) { 
+0818:  BTFSS  31.0
+0819:  GOTO   3B0
+081A:  BTFSS  31.1
+081B:  GOTO   3B0
+....................     switch(PgmFunction) { 
+081C:  MOVF   30,W
+081D:  ADDLW  F9
+081E:  BTFSC  03.0
+081F:  GOTO   3B0
+0820:  ADDLW  07
+0821:  BCF    03.6
+0822:  GOTO   3DF
+....................       case(0): 
+....................         PgmMode=0; 
+0823:  CLRF   5E
+....................           ErrorCode = MCHAR('d'); 
+0824:  MOVLW  0D
+0825:  BSF    03.6
+0826:  MOVWF  32
+....................         break; 
+0827:  GOTO   3B0
+....................       case(1): 
+....................         if (ProgramFunction()) 
+*
+0935:  MOVF   21,F
+0936:  BTFSC  03.2
+0937:  GOTO   13C
+....................           ErrorCode = 0x00; 
+0938:  BSF    03.6
+0939:  CLRF   32
+.................... 				else 
+093A:  GOTO   13F
+093B:  BCF    03.6
+....................           ErrorCode = MCHAR('p'); 
+093C:  MOVLW  19
+093D:  BSF    03.6
+093E:  MOVWF  32
+....................         break; 
+093F:  GOTO   3B0
+....................       case(2): 
+.................... 		    if ( ProgramInstruction() ) 
+*
+09D9:  MOVF   21,F
+09DA:  BTFSC  03.2
+09DB:  GOTO   1E0
+....................           ErrorCode = 0x00; 
+09DC:  BSF    03.6
+09DD:  CLRF   32
+.................... 				else 
+09DE:  GOTO   1E3
+09DF:  BCF    03.6
+....................           ErrorCode = MCHAR('i'); 
+09E0:  MOVLW  12
+09E1:  BSF    03.6
+09E2:  MOVWF  32
+....................         break; 
+09E3:  GOTO   3B0
+....................       case(3): 
+....................          if (syncData()) 
+*
+0A0E:  MOVF   21,F
+0A0F:  BTFSC  03.2
+0A10:  GOTO   215
+....................           ErrorCode = 0x00; 
+0A11:  BSF    03.6
+0A12:  CLRF   32
+.................... 				else 
+0A13:  GOTO   218
+0A14:  BCF    03.6
+....................           ErrorCode = MCHAR('s'); 
+0A15:  MOVLW  1C
+0A16:  BSF    03.6
+0A17:  MOVWF  32
+....................         break; 
+0A18:  GOTO   3B0
+....................       case(4): 
+....................   	    if (ProgramReg()) 
+*
+0AB7:  MOVF   21,F
+0AB8:  BTFSC  03.2
+0AB9:  GOTO   2BE
+....................           ErrorCode = 0x00; 
+0ABA:  BSF    03.6
+0ABB:  CLRF   32
+.................... 				else 
+0ABC:  GOTO   2C1
+0ABD:  BCF    03.6
+....................           ErrorCode = MCHAR('r'); 
+0ABE:  MOVLW  1B
+0ABF:  BSF    03.6
+0AC0:  MOVWF  32
+....................         break; 
+0AC1:  GOTO   3B0
+....................       case(5): 
+.................... 	      if ( EchoRegister()) 
+*
+0B9F:  MOVF   21,F
+0BA0:  BTFSC  03.2
+0BA1:  GOTO   3A6
+....................           ErrorCode = 0x00; 
+0BA2:  BSF    03.6
+0BA3:  CLRF   32
+.................... 				else 
+0BA4:  GOTO   3A9
+0BA5:  BCF    03.6
+....................           ErrorCode = MCHAR('e'); 
+0BA6:  MOVLW  0E
+0BA7:  BSF    03.6
+0BA8:  MOVWF  32
+....................         break; 
+0BA9:  GOTO   3B0
+.................... 	case(6): 
+.................... 		CALIBRATE_DTMF_FLAG=1; 
+0BAA:  BSF    5C.3
+.................... 		ErrorCode = MCHAR('c'); 
+0BAB:  MOVLW  0C
+0BAC:  BSF    03.6
+0BAD:  MOVWF  32
+.................... 	break; 
+0BAE:  GOTO   3B0
+0BAF:  BSF    03.6
+....................     } 
+....................   } 
+....................   if ( ErrorCode ) { 
+0BB0:  MOVF   32,F
+0BB1:  BTFSC  03.2
+0BB2:  GOTO   3DC
+....................       update_PTT(PWM_PTT,PTT_OVERRIDE); 
+0BB3:  MOVF   76,W
+0BB4:  MOVWF  40
+0BB5:  MOVLW  01
+0BB6:  MOVWF  41
+0BB7:  BCF    0A.3
+0BB8:  BCF    03.6
+0BB9:  CALL   5B8
+0BBA:  BSF    0A.3
+....................       delay_ms(750); 
+0BBB:  MOVLW  03
+0BBC:  BSF    03.6
+0BBD:  MOVWF  33
+0BBE:  MOVLW  FA
+0BBF:  MOVWF  46
+0BC0:  BCF    0A.3
+0BC1:  BCF    03.6
+0BC2:  CALL   650
+0BC3:  BSF    0A.3
+0BC4:  BSF    03.6
+0BC5:  DECFSZ 33,F
+0BC6:  GOTO   3BE
+....................       morse(ErrorCode); 
+0BC7:  MOVF   32,W
+0BC8:  MOVWF  40
+0BC9:  BCF    0A.3
+0BCA:  BCF    03.6
+0BCB:  CALL   6CC
+0BCC:  BSF    0A.3
+....................       delay_ms(250); 
+0BCD:  MOVLW  FA
+0BCE:  BSF    03.6
+0BCF:  MOVWF  46
+0BD0:  BCF    0A.3
+0BD1:  BCF    03.6
+0BD2:  CALL   650
+0BD3:  BSF    0A.3
+....................       update_PTT(0,PTT_NORMAL); 
+0BD4:  BSF    03.6
+0BD5:  CLRF   40
+0BD6:  CLRF   41
+0BD7:  BCF    0A.3
+0BD8:  BCF    03.6
+0BD9:  CALL   5B8
+0BDA:  BSF    0A.3
+0BDB:  BSF    03.6
+....................   } 
+.................... } 
+0BDC:  BCF    03.6
+0BDD:  BSF    0A.3
+0BDE:  GOTO   7BA (RETURN)
+.................... // }}} 
+.................... int1 ProgramFunction(void) { // {{{ 
+.................... // aDTMF index         0 1 2 3 4 5 6 7 8 
+.................... // ProgramFunction : * A a b c w x y z # 
+.................... // * (clear)            
+.................... //  (a=1) --> ProgramFunction 
+.................... //   b=1  --> set function pwd 
+.................... //   b=2  --> set function instruction pointer 
+.................... //   c=<fnPtr> --> Which function to program 
+.................... //   w x y z --> Function pwd keys. 
+....................   int FnType,FnPtr; 
+....................   int LastStrobe; 
+....................   int Key; 
+....................   int d; 
+....................   int1 Strobe; 
+....................   int1 ValidKeys; 
+....................   int1 Error; 
+....................  
+....................   FnType=aDTMF[PGMFN_TYPE].Key; 
+*
+0828:  MOVF   64,W
+0829:  ANDLW  0F
+082A:  BSF    03.6
+082B:  MOVWF  33
+....................   FnPtr =aDTMF[PGMFN_PTR].Key; 
+082C:  BCF    03.6
+082D:  MOVF   65,W
+082E:  ANDLW  0F
+082F:  BSF    03.6
+0830:  MOVWF  34
+....................  
+....................   ValidKeys=ValidKeyRange(PGMFN_TYPE,PGMFN_ARG0); // Check that keys were strobed 
+0831:  MOVLW  02
+0832:  MOVWF  3A
+0833:  MOVLW  04
+0834:  MOVWF  3B
+0835:  BCF    0A.3
+0836:  BCF    03.6
+0837:  CALL   602
+0838:  BSF    0A.3
+0839:  BSF    03.6
+083A:  BCF    38.1
+083B:  BCF    03.6
+083C:  BTFSS  21.0
+083D:  GOTO   041
+083E:  BSF    03.6
+083F:  BSF    38.1
+0840:  BCF    03.6
+....................  
+....................   if ( ValidKeys ) { 
+0841:  BSF    03.6
+0842:  BTFSS  38.1
+0843:  GOTO   12D
+....................     Error=0; 
+0844:  BCF    38.2
+....................     if(FnType == 1) { 
+0845:  DECFSZ 33,W
+0846:  GOTO   107
+....................       for(d=0;d<4;d++) { 
+0847:  CLRF   37
+0848:  MOVF   37,W
+0849:  SUBLW  03
+084A:  BTFSS  03.0
+084B:  GOTO   0F5
+....................         if(ValidKey(d+PGMFN_ARG0)) { 
+084C:  MOVLW  04
+084D:  ADDWF  37,W
+084E:  MOVWF  39
+084F:  MOVWF  3A
+0850:  BCF    0A.3
+0851:  BCF    03.6
+0852:  CALL   631
+0853:  BSF    0A.3
+0854:  MOVF   21,F
+0855:  BTFSC  03.2
+0856:  GOTO   0BD
+....................           Strobe=aDTMF[d+PGMFN_ARG0].Strobe; 
+0857:  BSF    03.6
+0858:  BCF    38.0
+0859:  MOVLW  04
+085A:  ADDWF  37,W
+085B:  ADDLW  62
+085C:  MOVWF  04
+085D:  BCF    03.7
+085E:  BTFSC  00.4
+085F:  BSF    38.0
+....................           Key   =aDTMF[d+PGMFN_ARG0].Key; 
+0860:  MOVLW  04
+0861:  ADDWF  37,W
+0862:  ADDLW  62
+0863:  MOVWF  04
+0864:  BCF    03.7
+0865:  MOVF   00,W
+0866:  ANDLW  0F
+0867:  MOVWF  36
+....................           Function[FnPtr].Digit[d].Key     = Key; 
+0868:  MOVF   34,W
+0869:  MOVWF  3C
+086A:  MOVLW  05
+086B:  MOVWF  3D
+086C:  BCF    0A.3
+086D:  BCF    03.6
+086E:  CALL   283
+086F:  BSF    0A.3
+0870:  BSF    03.6
+0871:  MOVF   37,W
+0872:  BCF    03.6
+0873:  ADDWF  21,W
+0874:  ADDLW  2E
+0875:  MOVWF  04
+0876:  BCF    03.7
+0877:  BSF    03.6
+0878:  MOVF   36,W
+0879:  ANDLW  0F
+087A:  BCF    03.6
+087B:  MOVWF  20
+087C:  MOVLW  F0
+087D:  ANDWF  00,W
+087E:  IORWF  20,W
+087F:  MOVWF  00
+....................           Function[FnPtr].Digit[d].Strobe  = Strobe; 
+0880:  BSF    03.6
+0881:  MOVF   34,W
+0882:  MOVWF  3C
+0883:  MOVLW  05
+0884:  MOVWF  3D
+0885:  BCF    0A.3
+0886:  BCF    03.6
+0887:  CALL   283
+0888:  BSF    0A.3
+0889:  BSF    03.6
+088A:  MOVF   37,W
+088B:  BCF    03.6
+088C:  ADDWF  21,W
+088D:  ADDLW  2E
+088E:  MOVWF  21
+088F:  CLRF   23
+0890:  BTFSC  03.0
+0891:  INCF   23,F
+0892:  MOVF   21,W
+0893:  BSF    03.6
+0894:  MOVWF  3C
+0895:  BCF    03.6
+0896:  MOVF   23,W
+0897:  BSF    03.6
+0898:  MOVWF  3D
+0899:  BTFSC  38.0
+089A:  GOTO   0A2
+089B:  MOVF   3C,W
+089C:  MOVWF  04
+089D:  BCF    03.7
+089E:  BTFSC  3D.0
+089F:  BSF    03.7
+08A0:  BCF    00.4
+08A1:  GOTO   0A8
+08A2:  MOVF   3C,W
+08A3:  MOVWF  04
+08A4:  BCF    03.7
+08A5:  BTFSC  3D.0
+08A6:  BSF    03.7
+08A7:  BSF    00.4
+....................           Function[FnPtr].Digit[d].LastKey = 0; 
+08A8:  MOVF   34,W
+08A9:  MOVWF  3C
+08AA:  MOVLW  05
+08AB:  MOVWF  3D
+08AC:  BCF    0A.3
+08AD:  BCF    03.6
+08AE:  CALL   283
+08AF:  BSF    0A.3
+08B0:  BSF    03.6
+08B1:  MOVF   37,W
+08B2:  BCF    03.6
+08B3:  ADDWF  21,W
+08B4:  ADDLW  2E
+08B5:  MOVWF  04
+08B6:  BCF    03.7
+08B7:  BCF    00.5
+....................           LastStrobe=d; 
+08B8:  BSF    03.6
+08B9:  MOVF   37,W
+08BA:  MOVWF  35
+....................         } else { 
+08BB:  GOTO   0F3
+08BC:  BCF    03.6
+....................           Function[FnPtr].Digit[d].Key=0; 
+08BD:  BSF    03.6
+08BE:  MOVF   34,W
+08BF:  MOVWF  3C
+08C0:  MOVLW  05
+08C1:  MOVWF  3D
+08C2:  BCF    0A.3
+08C3:  BCF    03.6
+08C4:  CALL   283
+08C5:  BSF    0A.3
+08C6:  BSF    03.6
+08C7:  MOVF   37,W
+08C8:  BCF    03.6
+08C9:  ADDWF  21,W
+08CA:  ADDLW  2E
+08CB:  MOVWF  04
+08CC:  BCF    03.7
+08CD:  MOVLW  F0
+08CE:  ANDWF  00,W
+08CF:  MOVWF  00
+....................           Function[FnPtr].Digit[d].Strobe=0; 
+08D0:  BSF    03.6
+08D1:  MOVF   34,W
+08D2:  MOVWF  3C
+08D3:  MOVLW  05
+08D4:  MOVWF  3D
+08D5:  BCF    0A.3
+08D6:  BCF    03.6
+08D7:  CALL   283
+08D8:  BSF    0A.3
+08D9:  BSF    03.6
+08DA:  MOVF   37,W
+08DB:  BCF    03.6
+08DC:  ADDWF  21,W
+08DD:  ADDLW  2E
+08DE:  MOVWF  04
+08DF:  BCF    03.7
+08E0:  BCF    00.4
+....................           Function[FnPtr].Digit[d].LastKey=0; 
+08E1:  BSF    03.6
+08E2:  MOVF   34,W
+08E3:  MOVWF  3C
+08E4:  MOVLW  05
+08E5:  MOVWF  3D
+08E6:  BCF    0A.3
+08E7:  BCF    03.6
+08E8:  CALL   283
+08E9:  BSF    0A.3
+08EA:  BSF    03.6
+08EB:  MOVF   37,W
+08EC:  BCF    03.6
+08ED:  ADDWF  21,W
+08EE:  ADDLW  2E
+08EF:  MOVWF  04
+08F0:  BCF    03.7
+08F1:  BCF    00.5
+08F2:  BSF    03.6
+....................         } 
+....................       } 
+08F3:  INCF   37,F
+08F4:  GOTO   048
+....................       Function[FnPtr].Digit[LastStrobe].LastKey=1; 
+08F5:  MOVF   34,W
+08F6:  MOVWF  3C
+08F7:  MOVLW  05
+08F8:  MOVWF  3D
+08F9:  BCF    0A.3
+08FA:  BCF    03.6
+08FB:  CALL   283
+08FC:  BSF    0A.3
+08FD:  BSF    03.6
+08FE:  MOVF   35,W
+08FF:  BCF    03.6
+0900:  ADDWF  21,W
+0901:  ADDLW  2E
+0902:  MOVWF  04
+0903:  BCF    03.7
+0904:  BSF    00.5
+....................     }  
+....................     else if ( (FnType == 2) && ValidKey(PGMFN_ARG0)) { 
+0905:  GOTO   12B
+0906:  BSF    03.6
+0907:  MOVF   33,W
+0908:  SUBLW  02
+0909:  BTFSS  03.2
+090A:  GOTO   129
+090B:  MOVLW  04
+090C:  MOVWF  3A
+090D:  BCF    0A.3
+090E:  BCF    03.6
+090F:  CALL   631
+0910:  BSF    0A.3
+0911:  MOVF   21,F
+0912:  BTFSS  03.2
+0913:  GOTO   116
+0914:  BSF    03.6
+0915:  GOTO   129
+....................       Function[FnPtr].PgmPtr=aDTMF[PGMFN_ARG0].Key; 
+0916:  BSF    03.6
+0917:  MOVF   34,W
+0918:  MOVWF  3C
+0919:  MOVLW  05
+091A:  MOVWF  3D
+091B:  BCF    0A.3
+091C:  BCF    03.6
+091D:  CALL   283
+091E:  BSF    0A.3
+091F:  MOVLW  04
+0920:  ADDWF  21,W
+0921:  ADDLW  2E
+0922:  MOVWF  04
+0923:  BCF    03.7
+0924:  MOVF   66,W
+0925:  ANDLW  0F
+0926:  MOVWF  00
+....................     } else { 
+0927:  GOTO   12B
+0928:  BSF    03.6
+....................       Error = 1; 
+0929:  BSF    38.2
+092A:  BCF    03.6
+....................     } 
+....................   } else { 
+092B:  GOTO   12F
+092C:  BSF    03.6
+....................     Error=1; 
+092D:  BSF    38.2
+092E:  BCF    03.6
+....................   } 
+....................   return(Error); 
+092F:  MOVLW  00
+0930:  BSF    03.6
+0931:  BTFSC  38.2
+0932:  MOVLW  01
+0933:  BCF    03.6
+0934:  MOVWF  21
+.................... } // }}} 
+.................... int1 ProgramReg(void) { // {{{ 
+.................... // aDTMF index         0 1 2 3 4 5 6 7 
+.................... // ProgramReg      : * A a b c d e f # 
+.................... // ProgramReg      : * a b c d e f # 
+.................... // * (clear)            
+.................... //  (a=4)      --> ProgramReg 
+.................... //  {b,c}      --> Register address (See RegPtrArray table in .h file) 
+.................... //  {d,e,[f]}  --> Register value 
+....................   int Reg; 
+....................   int Val; 
+....................   int *pReg; 
+....................   int tmp; 
+....................   int1 ValidKeys; 
+....................   int1 Error; 
+....................  
+....................   Error = 0; 
+*
+0A19:  BSF    03.6
+0A1A:  BCF    38.1
+....................   Reg =aDTMF[PGMREG_ADD0].Key * 10; 
+0A1B:  BCF    03.6
+0A1C:  MOVF   64,W
+0A1D:  ANDLW  0F
+0A1E:  BSF    03.6
+0A1F:  MOVWF  3A
+0A20:  MOVWF  3C
+0A21:  MOVLW  0A
+0A22:  MOVWF  3D
+0A23:  BCF    0A.3
+0A24:  BCF    03.6
+0A25:  CALL   283
+0A26:  BSF    0A.3
+0A27:  MOVF   21,W
+0A28:  BSF    03.6
+0A29:  MOVWF  33
+....................   Reg+=aDTMF[PGMREG_ADD1].Key; 
+0A2A:  BCF    03.6
+0A2B:  MOVF   65,W
+0A2C:  ANDLW  0F
+0A2D:  BSF    03.6
+0A2E:  ADDWF  33,F
+....................   if (ValidKey(PGMREG_VAL2)) { 
+0A2F:  MOVLW  06
+0A30:  MOVWF  3A
+0A31:  BCF    0A.3
+0A32:  BCF    03.6
+0A33:  CALL   631
+0A34:  BSF    0A.3
+0A35:  MOVF   21,F
+0A36:  BTFSC  03.2
+0A37:  GOTO   260
+....................     tmp=aDTMF[PGMREG_VAL0].Key; 
+0A38:  MOVF   66,W
+0A39:  ANDLW  0F
+0A3A:  BSF    03.6
+0A3B:  MOVWF  37
+....................     if ( tmp == 1 ) { // We only support numbers up to 255 
+0A3C:  DECFSZ 37,W
+0A3D:  GOTO   241
+....................       Val  = 100; 
+0A3E:  MOVLW  64
+0A3F:  MOVWF  34
+....................     } else if (tmp == 2 ) { 
+0A40:  GOTO   24A
+0A41:  MOVF   37,W
+0A42:  SUBLW  02
+0A43:  BTFSS  03.2
+0A44:  GOTO   248
+....................       Val  = 200; 
+0A45:  MOVLW  C8
+0A46:  MOVWF  34
+....................     } else { 
+0A47:  GOTO   24A
+....................       Val = 0; 
+0A48:  CLRF   34
+....................       Error=1; 
+0A49:  BSF    38.1
+....................     } 
+....................     Val += aDTMF[PGMREG_VAL1].Key*10; 
+0A4A:  BCF    03.6
+0A4B:  MOVF   67,W
+0A4C:  ANDLW  0F
+0A4D:  BSF    03.6
+0A4E:  MOVWF  3A
+0A4F:  MOVWF  3C
+0A50:  MOVLW  0A
+0A51:  MOVWF  3D
+0A52:  BCF    0A.3
+0A53:  BCF    03.6
+0A54:  CALL   283
+0A55:  BSF    0A.3
+0A56:  MOVF   21,W
+0A57:  BSF    03.6
+0A58:  ADDWF  34,F
+....................     Val += aDTMF[PGMREG_VAL2].Key; 
+0A59:  BCF    03.6
+0A5A:  MOVF   68,W
+0A5B:  ANDLW  0F
+0A5C:  BSF    03.6
+0A5D:  ADDWF  34,F
+....................   } else { 
+0A5E:  GOTO   273
+0A5F:  BCF    03.6
+....................     Val  = aDTMF[PGMREG_VAL0].Key*10; 
+0A60:  MOVF   66,W
+0A61:  ANDLW  0F
+0A62:  BSF    03.6
+0A63:  MOVWF  3A
+0A64:  MOVWF  3C
+0A65:  MOVLW  0A
+0A66:  MOVWF  3D
+0A67:  BCF    0A.3
+0A68:  BCF    03.6
+0A69:  CALL   283
+0A6A:  BSF    0A.3
+0A6B:  MOVF   21,W
+0A6C:  BSF    03.6
+0A6D:  MOVWF  34
+....................     Val += aDTMF[PGMREG_VAL1].Key; 
+0A6E:  BCF    03.6
+0A6F:  MOVF   67,W
+0A70:  ANDLW  0F
+0A71:  BSF    03.6
+0A72:  ADDWF  34,F
+....................   } 
+....................   ValidKeys=ValidKeyRange(PGMREG_ADD0,PGMREG_VAL1); // Check that keys were strobed 
+0A73:  MOVLW  02
+0A74:  MOVWF  3A
+0A75:  MOVLW  05
+0A76:  MOVWF  3B
+0A77:  BCF    0A.3
+0A78:  BCF    03.6
+0A79:  CALL   602
+0A7A:  BSF    0A.3
+0A7B:  BSF    03.6
+0A7C:  BCF    38.0
+0A7D:  BCF    03.6
+0A7E:  BTFSS  21.0
+0A7F:  GOTO   283
+0A80:  BSF    03.6
+0A81:  BSF    38.0
+0A82:  BCF    03.6
+....................   if ( ValidKeys ) { 
+0A83:  BSF    03.6
+0A84:  BTFSS  38.0
+0A85:  GOTO   2B1
+....................     if ( Reg < sizeof(RegPtrArray)) { 
+0A86:  MOVF   33,W
+0A87:  SUBLW  3F
+0A88:  BTFSS  03.0
+0A89:  GOTO   2AF
+....................       pReg=RegPtrArray[Reg]; 
+0A8A:  BCF    03.0
+0A8B:  RLF    33,W
+0A8C:  BCF    03.6
+0A8D:  BSF    03.6
+0A8E:  MOVWF  39
+0A8F:  INCF   39,W
+0A90:  BCF    0A.3
+0A91:  BCF    03.6
+0A92:  CALL   06B
+0A93:  BSF    0A.3
+0A94:  MOVWF  23
+0A95:  BSF    03.6
+0A96:  MOVF   39,W
+0A97:  BCF    0A.3
+0A98:  BCF    03.6
+0A99:  CALL   06B
+0A9A:  BSF    0A.3
+0A9B:  BSF    03.6
+0A9C:  MOVWF  35
+0A9D:  BCF    03.6
+0A9E:  MOVF   23,W
+0A9F:  BSF    03.6
+0AA0:  MOVWF  36
+....................       *pReg=Val; 
+0AA1:  MOVF   36,W
+0AA2:  BCF    03.6
+0AA3:  MOVWF  23
+0AA4:  BSF    03.6
+0AA5:  MOVF   35,W
+0AA6:  MOVWF  04
+0AA7:  BCF    03.7
+0AA8:  BCF    03.6
+0AA9:  BTFSC  23.0
+0AAA:  BSF    03.7
+0AAB:  BSF    03.6
+0AAC:  MOVF   34,W
+0AAD:  MOVWF  00
+....................     } else { 
+0AAE:  GOTO   2B0
+....................       Error = 1; 
+0AAF:  BSF    38.1
+....................     } 
+....................   } else { 
+0AB0:  GOTO   2B2
+....................     Error=1; 
+0AB1:  BSF    38.1
+....................   } 
+....................   return(Error); 
+0AB2:  MOVLW  00
+0AB3:  BTFSC  38.1
+0AB4:  MOVLW  01
+0AB5:  BCF    03.6
+0AB6:  MOVWF  21
+.................... } // }}} 
+.................... int1 ProgramInstruction(void) { // {{{ 
+.................... // aDTMF index            0 1 2 3    4     5 6 
+.................... // ProgramInstruction : * A a b c <op> <arg> # 
+.................... // * (clear)            
+.................... //  (a=2) --> ProgramInstruction 
+.................... //   b=<fnPtr> --> Which function to program 
+.................... //   c=<InstIndex> --> Which instruction index to program 
+.................... //   <op> <arg> --> Operator and argument 
+.................... //   Optionally, the arguments may be specified in decimal from 0 to 255: 
+.................... //   * A a b c d2 d1 d0 # 
+....................   int PgmPtr,InstPtr; 
+....................   int Op,Arg; 
+.................... //  int1 ValidKeys; 
+....................   int1 Error; 
+....................  
+....................   PgmPtr  = aDTMF[PGMINS_FPTR].Key; 
+*
+0940:  MOVF   64,W
+0941:  ANDLW  0F
+0942:  BSF    03.6
+0943:  MOVWF  33
+....................   InstPtr = aDTMF[PGMINS_IPTR].Key; 
+0944:  BCF    03.6
+0945:  MOVF   65,W
+0946:  ANDLW  0F
+0947:  BSF    03.6
+0948:  MOVWF  34
+....................   Op      = aDTMF[PGMINS_OP].Key&0x0F; 
+0949:  BCF    03.6
+094A:  MOVF   66,W
+094B:  ANDLW  0F
+094C:  ANDLW  0F
+094D:  BSF    03.6
+094E:  MOVWF  35
+....................   Arg     = aDTMF[PGMINS_ARG0].Key&0x0F; 
+094F:  BCF    03.6
+0950:  MOVF   67,W
+0951:  ANDLW  0F
+0952:  ANDLW  0F
+0953:  BSF    03.6
+0954:  MOVWF  36
+....................  
+....................   if ( ValidKeyRange(PGMINS_FPTR,PGMINS_ARG1) ) { // First method : Arguments are in decimal from 0 to 255 
+0955:  MOVLW  02
+0956:  MOVWF  3A
+0957:  MOVLW  06
+0958:  MOVWF  3B
+0959:  BCF    0A.3
+095A:  BCF    03.6
+095B:  CALL   602
+095C:  BSF    0A.3
+095D:  MOVF   21,F
+095E:  BTFSC  03.2
+095F:  GOTO   196
+....................     Error=0; 
+0960:  BSF    03.6
+0961:  BCF    37.0
+....................     Arg = aDTMF[PGMINS_ARG1].Key; 
+0962:  BCF    03.6
+0963:  MOVF   68,W
+0964:  ANDLW  0F
+0965:  BSF    03.6
+0966:  MOVWF  36
+....................     Arg += aDTMF[PGMINS_ARG0].Key*10; 
+0967:  BCF    03.6
+0968:  MOVF   67,W
+0969:  ANDLW  0F
+096A:  BSF    03.6
+096B:  MOVWF  39
+096C:  MOVWF  3C
+096D:  MOVLW  0A
+096E:  MOVWF  3D
+096F:  BCF    0A.3
+0970:  BCF    03.6
+0971:  CALL   283
+0972:  BSF    0A.3
+0973:  MOVF   21,W
+0974:  BSF    03.6
+0975:  ADDWF  36,F
+....................     Arg += aDTMF[PGMINS_OP].Key*100; 
+0976:  BCF    03.6
+0977:  MOVF   66,W
+0978:  ANDLW  0F
+0979:  BSF    03.6
+097A:  MOVWF  39
+097B:  MOVWF  3C
+097C:  MOVLW  64
+097D:  MOVWF  3D
+097E:  BCF    0A.3
+097F:  BCF    03.6
+0980:  CALL   283
+0981:  BSF    0A.3
+0982:  MOVF   21,W
+0983:  BSF    03.6
+0984:  ADDWF  36,F
+....................     Program[PgmPtr].Instruction[InstPtr] = Arg; 
+0985:  RLF    33,W
+0986:  BCF    03.6
+0987:  MOVWF  20
+0988:  RLF    20,F
+0989:  RLF    20,F
+098A:  MOVLW  F8
+098B:  ANDWF  20,F
+098C:  MOVF   20,W
+098D:  BSF    03.6
+098E:  ADDWF  34,W
+098F:  ADDLW  A0
+0990:  MOVWF  04
+0991:  BCF    03.7
+0992:  MOVF   36,W
+0993:  MOVWF  00
+....................   }  
+....................   else if ( ValidKeyRange(PGMINS_FPTR,PGMINS_ARG0) ) { 
+0994:  GOTO   1D2
+0995:  BCF    03.6
+0996:  MOVLW  02
+0997:  BSF    03.6
+0998:  MOVWF  3A
+0999:  MOVLW  05
+099A:  MOVWF  3B
+099B:  BCF    0A.3
+099C:  BCF    03.6
+099D:  CALL   602
+099E:  BSF    0A.3
+099F:  MOVF   21,F
+09A0:  BTFSC  03.2
+09A1:  GOTO   1D0
+....................     Error=0; 
+09A2:  BSF    03.6
+09A3:  BCF    37.0
+....................     Program[PgmPtr].Instruction[InstPtr].Op = Op; 
+09A4:  RLF    33,W
+09A5:  BCF    03.6
+09A6:  MOVWF  20
+09A7:  RLF    20,F
+09A8:  RLF    20,F
+09A9:  MOVLW  F8
+09AA:  ANDWF  20,F
+09AB:  MOVF   20,W
+09AC:  BSF    03.6
+09AD:  ADDWF  34,W
+09AE:  ADDLW  A0
+09AF:  MOVWF  04
+09B0:  BCF    03.7
+09B1:  SWAPF  35,W
+09B2:  ANDLW  F0
+09B3:  BCF    03.6
+09B4:  MOVWF  20
+09B5:  MOVLW  0F
+09B6:  ANDWF  00,W
+09B7:  IORWF  20,W
+09B8:  MOVWF  00
+....................     Program[PgmPtr].Instruction[InstPtr].Arg = Arg; 
+09B9:  BSF    03.6
+09BA:  RLF    33,W
+09BB:  BCF    03.6
+09BC:  MOVWF  20
+09BD:  RLF    20,F
+09BE:  RLF    20,F
+09BF:  MOVLW  F8
+09C0:  ANDWF  20,F
+09C1:  MOVF   20,W
+09C2:  BSF    03.6
+09C3:  ADDWF  34,W
+09C4:  ADDLW  A0
+09C5:  MOVWF  04
+09C6:  BCF    03.7
+09C7:  MOVF   36,W
+09C8:  ANDLW  0F
+09C9:  BCF    03.6
+09CA:  MOVWF  20
+09CB:  MOVLW  F0
+09CC:  ANDWF  00,W
+09CD:  IORWF  20,W
+09CE:  MOVWF  00
+....................   } else { 
+09CF:  GOTO   1D3
+....................     Error=1; 
+09D0:  BSF    03.6
+09D1:  BSF    37.0
+09D2:  BCF    03.6
+....................   } 
+....................   return(Error); 
+09D3:  MOVLW  00
+09D4:  BSF    03.6
+09D5:  BTFSC  37.0
+09D6:  MOVLW  01
+09D7:  BCF    03.6
+09D8:  MOVWF  21
+.................... } // }}} 
+.................... int1 EchoRegister (void) { // {{{ 
+.................... // aDTMF index            0 1 2 3 4 5   
+.................... // ProgramInstruction : * A 4 b c d # 
+.................... // * (clear)            
+.................... //  (a=4) --> EchoRegister 
+.................... //   b=<Type>  
+.................... //     1 --> Program register 
+.................... //     2 --> Instruction register 
+.................... //     3 --> RAM register 
+.................... //   c=<Index> --> Pgm/Instruction ptr  
+.................... //   d=<Index> --> Which index to echo 
+.................... //   <op> <arg> --> Operator and argument 
+....................   int RegType; 
+....................   int RegPtr; 
+....................   int Index; 
+....................   int Value; 
+....................   int HNibble,LNibble; 
+....................   int1 ValidKeys; 
+....................   int1 Error; 
+....................  
+....................   RegType = aDTMF[ECHO_TYPE].Key&0x07; 
+*
+0AC2:  MOVF   64,W
+0AC3:  ANDLW  0F
+0AC4:  ANDLW  07
+0AC5:  BSF    03.6
+0AC6:  MOVWF  33
+....................   RegPtr  = aDTMF[ECHO_PTR].Key&0x07; 
+0AC7:  BCF    03.6
+0AC8:  MOVF   65,W
+0AC9:  ANDLW  0F
+0ACA:  ANDLW  07
+0ACB:  BSF    03.6
+0ACC:  MOVWF  34
+....................   Index   = aDTMF[ECHO_INDEX].Key&0x07; 
+0ACD:  BCF    03.6
+0ACE:  MOVF   66,W
+0ACF:  ANDLW  0F
+0AD0:  ANDLW  07
+0AD1:  BSF    03.6
+0AD2:  MOVWF  35
+....................  
+....................   ValidKeys=ValidKeyRange(ECHO_TYPE,ECHO_INDEX); // Check that keys were strobed 
+0AD3:  MOVLW  02
+0AD4:  MOVWF  3A
+0AD5:  MOVLW  04
+0AD6:  MOVWF  3B
+0AD7:  BCF    0A.3
+0AD8:  BCF    03.6
+0AD9:  CALL   602
+0ADA:  BSF    0A.3
+0ADB:  BSF    03.6
+0ADC:  BCF    39.0
+0ADD:  BCF    03.6
+0ADE:  BTFSS  21.0
+0ADF:  GOTO   2E3
+0AE0:  BSF    03.6
+0AE1:  BSF    39.0
+0AE2:  BCF    03.6
+....................  
+....................   if ( ValidKeys ) { 
+0AE3:  BSF    03.6
+0AE4:  BTFSS  39.0
+0AE5:  GOTO   399
+....................     Error=0; 
+0AE6:  BCF    39.1
+....................     switch(RegType) { 
+0AE7:  MOVF   33,W
+0AE8:  XORLW  01
+0AE9:  BCF    03.6
+0AEA:  BTFSC  03.2
+0AEB:  GOTO   2F3
+0AEC:  XORLW  03
+0AED:  BTFSC  03.2
+0AEE:  GOTO   308
+0AEF:  XORLW  01
+0AF0:  BTFSC  03.2
+0AF1:  GOTO   319
+0AF2:  GOTO   34C
+....................       case(0x01): 
+....................             Value=Function[RegPtr].Digit[Index].Key; 
+0AF3:  BSF    03.6
+0AF4:  MOVF   34,W
+0AF5:  MOVWF  3C
+0AF6:  MOVLW  05
+0AF7:  MOVWF  3D
+0AF8:  BCF    0A.3
+0AF9:  BCF    03.6
+0AFA:  CALL   283
+0AFB:  BSF    0A.3
+0AFC:  BSF    03.6
+0AFD:  MOVF   35,W
+0AFE:  BCF    03.6
+0AFF:  ADDWF  21,W
+0B00:  ADDLW  2E
+0B01:  MOVWF  04
+0B02:  BCF    03.7
+0B03:  MOVF   00,W
+0B04:  ANDLW  0F
+0B05:  BSF    03.6
+0B06:  MOVWF  36
+....................        break; 
+0B07:  GOTO   34F
+....................       case(0x02): 
+....................             Value=(int)Program[RegPtr].Instruction[Index]; 
+0B08:  BSF    03.6
+0B09:  RLF    34,W
+0B0A:  BCF    03.6
+0B0B:  MOVWF  20
+0B0C:  RLF    20,F
+0B0D:  RLF    20,F
+0B0E:  MOVLW  F8
+0B0F:  ANDWF  20,F
+0B10:  MOVF   20,W
+0B11:  BSF    03.6
+0B12:  ADDWF  35,W
+0B13:  ADDLW  A0
+0B14:  MOVWF  04
+0B15:  BCF    03.7
+0B16:  MOVF   00,W
+0B17:  MOVWF  36
+....................        break; 
+0B18:  GOTO   34F
+....................       case(0x03): // When RegType is 3, argument c and d are used to specify which register. 
+....................       RegPtr =aDTMF[ECHO_PTR].Key*10; 
+0B19:  MOVF   65,W
+0B1A:  ANDLW  0F
+0B1B:  BSF    03.6
+0B1C:  MOVWF  3B
+0B1D:  MOVWF  3C
+0B1E:  MOVLW  0A
+0B1F:  MOVWF  3D
+0B20:  BCF    0A.3
+0B21:  BCF    03.6
+0B22:  CALL   283
+0B23:  BSF    0A.3
+0B24:  MOVF   21,W
+0B25:  BSF    03.6
+0B26:  MOVWF  34
+....................       RegPtr+=aDTMF[ECHO_INDEX].Key; 
+0B27:  BCF    03.6
+0B28:  MOVF   66,W
+0B29:  ANDLW  0F
+0B2A:  BSF    03.6
+0B2B:  ADDWF  34,F
+....................       if ( RegPtr < sizeof(RegPtrArray) ) { 
+0B2C:  MOVF   34,W
+0B2D:  SUBLW  3F
+0B2E:  BTFSS  03.0
+0B2F:  GOTO   349
+....................               Value=*RegPtrArray[RegPtr]; 
+0B30:  BCF    03.0
+0B31:  RLF    34,W
+0B32:  BCF    03.6
+0B33:  BSF    03.6
+0B34:  MOVWF  3A
+0B35:  INCF   3A,W
+0B36:  BCF    0A.3
+0B37:  BCF    03.6
+0B38:  CALL   06B
+0B39:  BSF    0A.3
+0B3A:  MOVWF  23
+0B3B:  BSF    03.6
+0B3C:  MOVF   3A,W
+0B3D:  BCF    0A.3
+0B3E:  BCF    03.6
+0B3F:  CALL   06B
+0B40:  BSF    0A.3
+0B41:  MOVWF  04
+0B42:  BCF    03.7
+0B43:  BTFSC  23.0
+0B44:  BSF    03.7
+0B45:  MOVF   00,W
+0B46:  BSF    03.6
+0B47:  MOVWF  36
+....................       } else { 
+0B48:  GOTO   34A
+....................               Error=1; 
+0B49:  BSF    39.1
+....................       } 
+....................     break; 
+0B4A:  GOTO   34F
+0B4B:  BCF    03.6
+....................       default: 
+....................         Value = 0; 
+0B4C:  BSF    03.6
+0B4D:  CLRF   36
+....................       break; 
+0B4E:  GOTO   34F
+....................     } 
+....................     if ( Value ) { 
+0B4F:  MOVF   36,F
+0B50:  BTFSC  03.2
+0B51:  GOTO   398
+....................       update_PTT(PWM_PTT,PTT_OVERRIDE); 
+0B52:  MOVF   76,W
+0B53:  MOVWF  40
+0B54:  MOVLW  01
+0B55:  MOVWF  41
+0B56:  BCF    0A.3
+0B57:  BCF    03.6
+0B58:  CALL   5B8
+0B59:  BSF    0A.3
+....................       delay_ms(750); 
+0B5A:  MOVLW  03
+0B5B:  BSF    03.6
+0B5C:  MOVWF  3A
+0B5D:  MOVLW  FA
+0B5E:  MOVWF  46
+0B5F:  BCF    0A.3
+0B60:  BCF    03.6
+0B61:  CALL   650
+0B62:  BSF    0A.3
+0B63:  BSF    03.6
+0B64:  DECFSZ 3A,F
+0B65:  GOTO   35D
+....................       HNibble=(Value&0xF0)>>4; 
+0B66:  MOVF   36,W
+0B67:  ANDLW  F0
+0B68:  BCF    03.6
+0B69:  MOVWF  20
+0B6A:  SWAPF  20,W
+0B6B:  BSF    03.6
+0B6C:  MOVWF  37
+0B6D:  MOVLW  0F
+0B6E:  ANDWF  37,F
+....................       if ( HNibble ) { 
+0B6F:  MOVF   37,F
+0B70:  BTFSC  03.2
+0B71:  GOTO   380
+....................         morse(HNibble); 
+0B72:  MOVF   37,W
+0B73:  MOVWF  40
+0B74:  BCF    0A.3
+0B75:  BCF    03.6
+0B76:  CALL   6CC
+0B77:  BSF    0A.3
+....................         delay_ms(3 * DitDelay * MORSE_MULTIPLIER_ISR_OFF); 
+0B78:  MOVLW  D2
+0B79:  BSF    03.6
+0B7A:  MOVWF  46
+0B7B:  BCF    0A.3
+0B7C:  BCF    03.6
+0B7D:  CALL   650
+0B7E:  BSF    0A.3
+0B7F:  BSF    03.6
+....................       } 
+....................       LNibble=Value&0x0F; 
+0B80:  MOVF   36,W
+0B81:  ANDLW  0F
+0B82:  MOVWF  38
+....................       morse(LNibble); 
+0B83:  MOVF   38,W
+0B84:  MOVWF  40
+0B85:  BCF    0A.3
+0B86:  BCF    03.6
+0B87:  CALL   6CC
+0B88:  BSF    0A.3
+....................       delay_ms(250); 
+0B89:  MOVLW  FA
+0B8A:  BSF    03.6
+0B8B:  MOVWF  46
+0B8C:  BCF    0A.3
+0B8D:  BCF    03.6
+0B8E:  CALL   650
+0B8F:  BSF    0A.3
+....................       update_PTT(0,PTT_NORMAL); 
+0B90:  BSF    03.6
+0B91:  CLRF   40
+0B92:  CLRF   41
+0B93:  BCF    0A.3
+0B94:  BCF    03.6
+0B95:  CALL   5B8
+0B96:  BSF    0A.3
+0B97:  BSF    03.6
+....................     } 
+....................   } else { 
+0B98:  GOTO   39A
+....................     Error=1; 
+0B99:  BSF    39.1
+....................   } 
+....................   return(Error); 
+0B9A:  MOVLW  00
+0B9B:  BTFSC  39.1
+0B9C:  MOVLW  01
+0B9D:  BCF    03.6
+0B9E:  MOVWF  21
+.................... } // }}} 
+.................... int1 syncData(void) { // {{{ 
+.................... // aDTMF index         0 1 2 3 
+.................... // ProgramFunction : * A 3 x # 
+.................... // 3 == SyncData function 
+.................... // x == which sync type (0,1 or 2) 
+.................... // 	0 -> RAM    <-- EEPROM 
+.................... // 	1 -> EEPROM <-- RAM 
+.................... // 	2 -> RAM    <-- DEFAULTS 
+....................   int1 ValidKeys; 
+....................   int SyncMethod; 
+....................   int1 Error; 
+....................  
+....................   ValidKeys=ValidKey(SYNC_TYPE); 
+*
+09E4:  MOVLW  02
+09E5:  BSF    03.6
+09E6:  MOVWF  3A
+09E7:  BCF    0A.3
+09E8:  BCF    03.6
+09E9:  CALL   631
+09EA:  BSF    0A.3
+09EB:  BSF    03.6
+09EC:  BCF    33.0
+09ED:  BCF    03.6
+09EE:  BTFSS  21.0
+09EF:  GOTO   1F3
+09F0:  BSF    03.6
+09F1:  BSF    33.0
+09F2:  BCF    03.6
+....................   SyncMethod=aDTMF[SYNC_TYPE].Key; 
+09F3:  MOVF   64,W
+09F4:  ANDLW  0F
+09F5:  BSF    03.6
+09F6:  MOVWF  34
+....................   if(ValidKeys && (SyncMethod>=0) && (SyncMethod<=2)) { 
+09F7:  BTFSS  33.0
+09F8:  GOTO   206
+09F9:  MOVF   34,W
+09FA:  SUBLW  02
+09FB:  BTFSS  03.0
+09FC:  GOTO   206
+....................     Error=0; 
+09FD:  BCF    33.1
+....................     sync_data(SyncMethod); 
+09FE:  MOVF   34,W
+09FF:  MOVWF  35
+0A00:  BCF    0A.3
+0A01:  BCF    03.6
+0A02:  CALL   337
+0A03:  BSF    0A.3
+....................   } else { 
+0A04:  GOTO   208
+0A05:  BSF    03.6
+....................     Error=1; 
+0A06:  BSF    33.1
+0A07:  BCF    03.6
+....................   } 
+....................   return(Error); 
+0A08:  MOVLW  00
+0A09:  BSF    03.6
+0A0A:  BTFSC  33.1
+0A0B:  MOVLW  01
+0A0C:  BCF    03.6
+0A0D:  MOVWF  21
+.................... } // }}} 
+.................... int1 ValidKey(int index) { // {{{ 
+....................   int1 strobe; 
+....................   if(index>=0 && (index <= sizeof(aDTMF))) { 
+*
+0631:  BSF    03.6
+0632:  MOVF   3A,W
+0633:  SUBLW  0A
+0634:  BTFSS  03.0
+0635:  GOTO   649
+....................     if(aDTMF[index].Strobe && (aDTMF[index].Key != dp)) { 
+0636:  MOVLW  62
+0637:  ADDWF  3A,W
+0638:  MOVWF  04
+0639:  BCF    03.7
+063A:  BTFSS  00.4
+063B:  GOTO   647
+063C:  MOVLW  62
+063D:  ADDWF  3A,W
+063E:  MOVWF  04
+063F:  BCF    03.7
+0640:  MOVF   00,W
+0641:  ANDLW  0F
+0642:  SUBLW  0C
+0643:  BTFSC  03.2
+0644:  GOTO   647
+.................... 		strobe=1; 
+0645:  BSF    3B.0
+.................... 	}else { 
+0646:  GOTO   648
+.................... 		strobe = 0; 
+0647:  BCF    3B.0
+.................... 	}  
+....................   } else { 
+0648:  GOTO   64A
+....................     strobe=0; 
+0649:  BCF    3B.0
+....................   } 
+....................   return(strobe); 
+064A:  MOVLW  00
+064B:  BTFSC  3B.0
+064C:  MOVLW  01
+064D:  BCF    03.6
+064E:  MOVWF  21
+.................... } // }}} 
+064F:  RETLW  00
+.................... int1 ValidKeyRange(unsigned int a,unsigned int b) { // {{{ 
+....................   int key; 
+....................   int x; 
+....................   int1 valid; 
+....................   int1 strobe; 
+....................  
+....................   if(b>=a && (a < sizeof(aDTMF))) { 
+*
+0602:  BSF    03.6
+0603:  MOVF   3A,W
+0604:  SUBWF  3B,W
+0605:  BTFSS  03.0
+0606:  GOTO   62A
+0607:  MOVF   3A,W
+0608:  SUBLW  09
+0609:  BTFSS  03.0
+060A:  GOTO   62A
+....................     valid=1; 
+060B:  BSF    3E.0
+....................     for(x=a;x<=b;x++) { 
+060C:  MOVF   3A,W
+060D:  MOVWF  3D
+060E:  MOVF   3D,W
+060F:  SUBWF  3B,W
+0610:  BTFSS  03.0
+0611:  GOTO   629
+....................       key=aDTMF[x].Key; 
+0612:  MOVLW  62
+0613:  ADDWF  3D,W
+0614:  MOVWF  04
+0615:  BCF    03.7
+0616:  MOVF   00,W
+0617:  ANDLW  0F
+0618:  MOVWF  3C
+....................       strobe=aDTMF[x].Strobe; 
+0619:  BCF    3E.1
+061A:  MOVLW  62
+061B:  ADDWF  3D,W
+061C:  MOVWF  04
+061D:  BCF    03.7
+061E:  BTFSC  00.4
+061F:  BSF    3E.1
+....................       if(key==dp || !strobe) { 
+0620:  MOVF   3C,W
+0621:  SUBLW  0C
+0622:  BTFSC  03.2
+0623:  GOTO   626
+0624:  BTFSC  3E.1
+0625:  GOTO   627
+....................         valid=0; 
+0626:  BCF    3E.0
+....................       } 
+....................     } 
+0627:  INCF   3D,F
+0628:  GOTO   60E
+....................   } else { 
+0629:  GOTO   62B
+....................     valid=0; 
+062A:  BCF    3E.0
+....................   } 
+....................   return(valid); 
+062B:  MOVLW  00
+062C:  BTFSC  3E.0
+062D:  MOVLW  01
+062E:  BCF    03.6
+062F:  MOVWF  21
+.................... } // }}} 
+0630:  RETLW  00
+.................... int1 OSCTuneTest(int digit) { // {{{ 
+.................... 	int dtmfIn; 
+.................... 	int retVal; 
+.................... 	sendDTMFCal(digit,START); 
+*
+078D:  BSF    03.6
+078E:  MOVF   39,W
+078F:  MOVWF  3C
+0790:  MOVLW  01
+0791:  MOVWF  3D
+0792:  BCF    03.6
+0793:  CALL   75E
+.................... 	delay_ms(70); 
+0794:  MOVLW  46
+0795:  BSF    03.6
+0796:  MOVWF  46
+0797:  BCF    03.6
+0798:  CALL   650
+.................... 	retVal = 0; 
+0799:  BSF    03.6
+079A:  CLRF   3B
+.................... 	if(input(PIN_A4)) { 
+079B:  BCF    03.6
+079C:  BTFSS  05.4
+079D:  GOTO   7B4
+.................... 		dtmfIn = input_a() & 0x0F; 
+079E:  MOVF   05,W
+079F:  ANDLW  0F
+07A0:  BSF    03.6
+07A1:  MOVWF  3A
+.................... 		if (dtmfIn == 0x0A) { 
+07A2:  MOVF   3A,W
+07A3:  SUBLW  0A
+07A4:  BTFSS  03.2
+07A5:  GOTO   7A8
+.................... 			dtmfIn = 0x00; 
+07A6:  CLRF   3A
+.................... 		} else if (dtmfIn == 0x00) { 
+07A7:  GOTO   7AD
+07A8:  MOVF   3A,F
+07A9:  BTFSS  03.2
+07AA:  GOTO   7AD
+.................... 			dtmfIn = 0x0A; 
+07AB:  MOVLW  0A
+07AC:  MOVWF  3A
+.................... 		} 
+.................... 		if (dtmfIn == digit) { // DTMF locked? 
+07AD:  MOVF   39,W
+07AE:  SUBWF  3A,W
+07AF:  BTFSS  03.2
+07B0:  GOTO   7B3
+.................... 			retVal = 1; 
+07B1:  MOVLW  01
+07B2:  MOVWF  3B
+07B3:  BCF    03.6
+.................... 		} 
+.................... 	} 
+.................... 	sendDTMFCal(digit,STOP); 
+07B4:  BSF    03.6
+07B5:  MOVF   39,W
+07B6:  MOVWF  3C
+07B7:  CLRF   3D
+07B8:  BCF    03.6
+07B9:  CALL   75E
+.................... 	delay_ms(10); 
+07BA:  MOVLW  0A
+07BB:  BSF    03.6
+07BC:  MOVWF  46
+07BD:  BCF    03.6
+07BE:  CALL   650
+.................... 	return(retVal); 
+07BF:  BSF    03.6
+07C0:  MOVF   3B,W
+07C1:  BCF    03.6
+07C2:  MOVWF  21
+.................... } // }}} 
+07C3:  RETLW  00
+.................... int1 calibrateDigit(int digit) { // {{{ 
+.................... 	signed int lLimit,uLimit,tuneTemp,oscval; 
+.................... 	int1 tuneTempValid; 
+.................... 	int cnt; 
+.................... 	int1 retval,FoundOscVal; 
+....................  
+.................... 	update_PTT(0,PTT_OVERRIDE); 
+*
+0E0F:  CLRF   40
+0E10:  MOVLW  01
+0E11:  MOVWF  41
+0E12:  BCF    0A.3
+0E13:  BCF    03.6
+0E14:  CALL   5B8
+0E15:  BSF    0A.3
+.................... 	ActivateRXRelays(0); 
+0E16:  BSF    03.6
+0E17:  CLRF   43
+0E18:  BCF    0A.3
+0E19:  BCF    03.6
+0E1A:  CALL   50B
+0E1B:  BSF    0A.3
+....................  
+.................... 	lLimit=uLimit=0; 
+0E1C:  BSF    03.6
+0E1D:  CLRF   34
+0E1E:  MOVF   34,W
+0E1F:  MOVWF  33
+.................... 	cnt=0; 
+0E20:  CLRF   38
+.................... 	update_PTT(0,PTT_OVERRIDE); // Disable all PTTs 
+0E21:  CLRF   40
+0E22:  MOVLW  01
+0E23:  MOVWF  41
+0E24:  BCF    0A.3
+0E25:  BCF    03.6
+0E26:  CALL   5B8
+0E27:  BSF    0A.3
+.................... 	output_bit(AUX0_PIN,0); 
+0E28:  BCF    06.4
+.................... 	output_bit(AUX1_PIN,0); 
+0E29:  BCF    05.5
+.................... 	// find a good OSCTUNE value to begin searching for up/down limits 
+.................... 	cnt=0; 
+0E2A:  BSF    03.6
+0E2B:  CLRF   38
+.................... 	FoundOscVal=0; 
+0E2C:  BCF    37.2
+.................... 	oscval=0; 
+0E2D:  CLRF   36
+.................... 	// Try the following OSCTUNE values : 0, -1, 1, -2, 2, -3, ... 
+.................... 	for(cnt=0;cnt<16;cnt++) { 
+0E2E:  CLRF   38
+0E2F:  MOVF   38,W
+0E30:  SUBLW  0F
+0E31:  BTFSS  03.0
+0E32:  GOTO   666
+.................... 		if ( !FoundOscVal ) { 
+0E33:  BTFSC  37.2
+0E34:  GOTO   662
+.................... 			oscval = -oscval; 
+0E35:  COMF   36,F
+0E36:  INCF   36,F
+.................... 			OSCTUNE = oscval&0x1F; 
+0E37:  MOVF   36,W
+0E38:  ANDLW  1F
+0E39:  BSF    03.5
+0E3A:  BCF    03.6
+0E3B:  MOVWF  10
+.................... 			if ( OSCTuneTest(digit) ) { 
+0E3C:  BCF    03.5
+0E3D:  BSF    03.6
+0E3E:  MOVF   32,W
+0E3F:  MOVWF  39
+0E40:  BCF    0A.3
+0E41:  BCF    03.6
+0E42:  CALL   78D
+0E43:  BSF    0A.3
+0E44:  MOVF   21,F
+0E45:  BTFSC  03.2
+0E46:  GOTO   64B
+.................... 				FoundOscVal=1; 
+0E47:  BSF    03.6
+0E48:  BSF    37.2
+.................... 			} else { 
+0E49:  GOTO   662
+0E4A:  BCF    03.6
+.................... 				oscval = -(oscval + 1); 
+0E4B:  MOVLW  01
+0E4C:  BSF    03.6
+0E4D:  ADDWF  36,W
+0E4E:  SUBLW  00
+0E4F:  MOVWF  36
+.................... 			  OSCTUNE = oscval&0x1F; 
+0E50:  MOVF   36,W
+0E51:  ANDLW  1F
+0E52:  BSF    03.5
+0E53:  BCF    03.6
+0E54:  MOVWF  10
+.................... 				if ( OSCTuneTest(digit) ) { 
+0E55:  BCF    03.5
+0E56:  BSF    03.6
+0E57:  MOVF   32,W
+0E58:  MOVWF  39
+0E59:  BCF    0A.3
+0E5A:  BCF    03.6
+0E5B:  CALL   78D
+0E5C:  BSF    0A.3
+0E5D:  MOVF   21,F
+0E5E:  BTFSC  03.2
+0E5F:  GOTO   663
+.................... 					FoundOscVal = 1; 
+0E60:  BSF    03.6
+0E61:  BSF    37.2
+0E62:  BCF    03.6
+.................... 				} 
+.................... 			} 
+.................... 		} 	 
+.................... 	} 
+0E63:  BSF    03.6
+0E64:  INCF   38,F
+0E65:  GOTO   62F
+.................... 	if ( FoundOscVal ) { 
+0E66:  BTFSS  37.2
+0E67:  GOTO   66C
+.................... 		tuneTemp = oscval; 
+0E68:  MOVF   36,W
+0E69:  MOVWF  35
+.................... 		tuneTempValid = 1; 
+0E6A:  BSF    37.0
+.................... 	} else { 
+0E6B:  GOTO   66E
+.................... 		tuneTemp = 0; 
+0E6C:  CLRF   35
+.................... 		tuneTempValid = 0; 
+0E6D:  BCF    37.0
+.................... 	} 
+.................... 	// When we get out of this for loop, OSCTUNE should be set to a good value. 
+.................... 	// Next: Let's try to center OSCTUNE between the upper and lower limits. 
+.................... 	// go down from tuneTemp 
+.................... 	FoundOscVal=0; 
+0E6E:  BCF    37.2
+.................... 	oscval = tuneTemp; 
+0E6F:  MOVF   35,W
+0E70:  MOVWF  36
+.................... 	while(!FoundOscVal && tuneTempValid) { 
+0E71:  BTFSC  37.2
+0E72:  GOTO   693
+0E73:  BTFSS  37.0
+0E74:  GOTO   693
+.................... 		output_bit(AUX0_PIN,1); 
+0E75:  BCF    03.6
+0E76:  BSF    06.4
+.................... 		output_bit(AUX1_PIN,0); 
+0E77:  BCF    05.5
+.................... 		lLimit = oscval; 
+0E78:  BSF    03.6
+0E79:  MOVF   36,W
+0E7A:  MOVWF  33
+.................... 		oscval--; 
+0E7B:  DECF   36,F
+.................... 	  OSCTUNE = oscval&0x1F; 
+0E7C:  MOVF   36,W
+0E7D:  ANDLW  1F
+0E7E:  BSF    03.5
+0E7F:  BCF    03.6
+0E80:  MOVWF  10
+.................... 		if ( !FoundOscVal && !OSCTuneTest(digit) ) { 
+0E81:  BCF    03.5
+0E82:  BSF    03.6
+0E83:  BTFSC  37.2
+0E84:  GOTO   692
+0E85:  MOVF   32,W
+0E86:  MOVWF  39
+0E87:  BCF    0A.3
+0E88:  BCF    03.6
+0E89:  CALL   78D
+0E8A:  BSF    0A.3
+0E8B:  MOVF   21,F
+0E8C:  BTFSC  03.2
+0E8D:  GOTO   690
+0E8E:  BSF    03.6
+0E8F:  GOTO   692
+.................... 			FoundOscVal=1; 
+0E90:  BSF    03.6
+0E91:  BSF    37.2
+.................... 		}  
+.................... 	} 
+0E92:  GOTO   671
+.................... 	FoundOscVal=0; 
+0E93:  BCF    37.2
+.................... 	oscval = tuneTemp;	 
+0E94:  MOVF   35,W
+0E95:  MOVWF  36
+.................... 	while(!FoundOscVal && tuneTempValid) { 
+0E96:  BTFSC  37.2
+0E97:  GOTO   6B8
+0E98:  BTFSS  37.0
+0E99:  GOTO   6B8
+.................... 		output_bit(AUX0_PIN,0); 
+0E9A:  BCF    03.6
+0E9B:  BCF    06.4
+.................... 		output_bit(AUX1_PIN,1); 
+0E9C:  BSF    05.5
+.................... 		uLimit = oscval; 
+0E9D:  BSF    03.6
+0E9E:  MOVF   36,W
+0E9F:  MOVWF  34
+.................... 		oscval++; 
+0EA0:  INCF   36,F
+.................... 	  OSCTUNE = oscval&0x1F; 
+0EA1:  MOVF   36,W
+0EA2:  ANDLW  1F
+0EA3:  BSF    03.5
+0EA4:  BCF    03.6
+0EA5:  MOVWF  10
+.................... 		if ( !FoundOscVal && !OSCTuneTest(digit) ) { 
+0EA6:  BCF    03.5
+0EA7:  BSF    03.6
+0EA8:  BTFSC  37.2
+0EA9:  GOTO   6B7
+0EAA:  MOVF   32,W
+0EAB:  MOVWF  39
+0EAC:  BCF    0A.3
+0EAD:  BCF    03.6
+0EAE:  CALL   78D
+0EAF:  BSF    0A.3
+0EB0:  MOVF   21,F
+0EB1:  BTFSC  03.2
+0EB2:  GOTO   6B5
+0EB3:  BSF    03.6
+0EB4:  GOTO   6B7
+.................... 			FoundOscVal=1; 
+0EB5:  BSF    03.6
+0EB6:  BSF    37.2
+.................... 		}  
+.................... 	} 
+0EB7:  GOTO   696
+.................... 	if ( tuneTempValid ) { 
+0EB8:  BTFSS  37.0
+0EB9:  GOTO   6FE
+.................... 		DTMF_OSCTUNE[digit] = ((uLimit + lLimit)/2)&0x1F  ; 
+0EBA:  MOVLW  20
+0EBB:  ADDWF  32,W
+0EBC:  MOVWF  04
+0EBD:  BSF    03.7
+0EBE:  MOVF   33,W
+0EBF:  ADDWF  34,W
+0EC0:  MOVWF  3C
+0EC1:  MOVF   3C,W
+0EC2:  MOVWF  3D
+0EC3:  MOVLW  02
+0EC4:  MOVWF  3E
+*
+0EF7:  BCF    03.6
+0EF8:  MOVF   21,W
+0EF9:  ANDLW  1F
+0EFA:  MOVWF  00
+.................... 		retval=1; 
+0EFB:  BSF    03.6
+0EFC:  BSF    37.1
+.................... 	} else { 
+0EFD:  GOTO   704
+.................... 		DTMF_OSCTUNE[digit] = 0; // Default value 
+0EFE:  MOVLW  20
+0EFF:  ADDWF  32,W
+0F00:  MOVWF  04
+0F01:  BSF    03.7
+0F02:  CLRF   00
+.................... 		retval=0; 
+0F03:  BCF    37.1
+.................... 	} 
+.................... 	OSCTUNE = 0; 
+0F04:  BSF    03.5
+0F05:  BCF    03.6
+0F06:  CLRF   10
+.................... 	output_bit(AUX0_PIN,0); 
+0F07:  BCF    03.5
+0F08:  BCF    06.4
+.................... 	output_bit(AUX1_PIN,0); 
+0F09:  BCF    05.5
+.................... 	// debug 
+.................... 	return(retval); 
+0F0A:  MOVLW  00
+0F0B:  BSF    03.6
+0F0C:  BTFSC  37.1
+0F0D:  MOVLW  01
+0F0E:  BCF    03.6
+0F0F:  MOVWF  21
+.................... } // }}} 
+.................... void CalibrateDTMF(void) { // {{{ 
+....................   int CalSuccess; 
+....................   int d; 
+....................   // Calibrate all DTMF digits {{{ 
+....................   CalSuccess=0; 
+*
+0E06:  BSF    03.6
+0E07:  CLRF   30
+....................   for(d=0;d<16;d++) { 
+0E08:  CLRF   31
+0E09:  MOVF   31,W
+0E0A:  SUBLW  0F
+0E0B:  BTFSS  03.0
+0E0C:  GOTO   719
+....................  	 if(calibrateDigit(d)) { 
+0E0D:  MOVF   31,W
+0E0E:  MOVWF  32
+*
+0F10:  MOVF   21,F
+0F11:  BTFSC  03.2
+0F12:  GOTO   716
+.................... 		 CalSuccess++; 
+0F13:  BSF    03.6
+0F14:  INCF   30,F
+0F15:  BCF    03.6
+.................... 	 } 
+....................   } 
+0F16:  BSF    03.6
+0F17:  INCF   31,F
+0F18:  GOTO   609
+....................   if ( CalSuccess == 16 ) { 
+0F19:  MOVF   30,W
+0F1A:  SUBLW  10
+0F1B:  BTFSS  03.2
+0F1C:  GOTO   721
+.................... 	output_bit(AUX1_PIN,1); 
+0F1D:  BCF    03.6
+0F1E:  BSF    05.5
+....................   } else { 
+0F1F:  GOTO   723
+0F20:  BSF    03.6
+.................... 	output_bit(AUX1_PIN,0); 
+0F21:  BCF    03.6
+0F22:  BCF    05.5
+....................   } 
+....................   // Calibrate all DTMF digits }}} 
+.................... } // }}} 
+0F23:  BSF    0A.3
+0F24:  GOTO   7F8 (RETURN)
+
+Configuration Fuses:
+   Word  1: 30D4   INTRC_IO NOPROTECT NOBROWNOUT NOMCLR NOCPD NOWDT NOPUT NOIESO NOFCMEN
